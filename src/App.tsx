@@ -1,2679 +1,4406 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { 
-  BarChart, Bar, LineChart, Line, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer,
-  PieChart, Pie, Cell
-} from 'recharts';
-import { 
-  LayoutDashboard, FolderTree, Folder, Calendar, Plus, 
-  CheckCircle, Clock, ChevronRight, Activity, Menu, Target, 
-  Trash2, Diamond, DollarSign, 
-  Edit3, Filter, FileSpreadsheet, FlaskConical, Building2, TestTube,
-  Home, FolderOpen, Mail, Phone, AlertCircle, RefreshCw, Sparkles
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  Suspense,
+  lazy,
+  startTransition
+} from 'react';
+import {
+  Menu,
+  X,
+  Home,
+  LayoutDashboard,
+  GanttChart,
+  Kanban,
+  FileText,
+  Download,
+  Upload,
+  Plus,
+  Trash2,
+  FolderOpen,
+  Sun,
+  Moon,
+  User,
+  CheckCircle2,
+  AlertTriangle,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
+  RefreshCw,
+  Printer,
+  Filter,
+  Target,
+  Briefcase,
+  Layers,
+  Award,
+  DollarSign,
+  TrendingUp,
+  HelpCircle,
+  Network,
+  Calendar,
+  ListChecks,
+  FileSpreadsheet,
+  FileUp,
+  FileDown,
+  Save,
+  Users,
+  Globe,
+  QrCode,
+  ShieldCheck,
+  FlaskConical,
+  TestTube
 } from 'lucide-react';
+import {
+  CurrencyCode,
+  LanguageCode,
+  ThemeMode,
+  UserProfile,
+  Dossier,
+  Axe,
+  Project,
+  Task,
+  CustomDocsMap,
+  CustomDocFields,
+  InstitutionalDocType,
+  CategorizedActor
+} from './types';
+import {
+  defaultUserProfile,
+  defaultCustomDocsData,
+  initialDossiers,
+  loadAppStateFromIDB,
+  saveAppStateToIDB,
+  setActiveUserStorageUid,
+  ensureDossierCategorizedActors,
+  renameActorInDossierTasks
+} from './db';
+import { translations, formatCurrency } from './i18n';
+import { generateDirectWhitePDF } from './pdfExport';
+import {
+  saveProgramFile,
+  initExportStorage,
+  setActiveExportUserUid,
+  pickFaabPlanFolder,
+  downloadProgramFolderZip
+} from './services/exportStorage';
+import {
+  STANDARD_PHASES,
+  getTodayISO,
+  computeTaskMetrics,
+  recalculateProjectTasksOnKanbanMove,
+  computeDossierPertSummary
+} from './pertUtils';
+import { AppLogo } from './components/AppLogo';
+import { LandingPage } from './components/LandingPage';
+import {
+  UserProfileView,
+  DossiersAndProjectsView
+} from './components/UserProfileAndDossiersView';
+import { resolveProgramRaciContext } from './docMatrices';
+import {
+  safeJsonParse,
+  sanitizeCsvCellForExport,
+  sanitizeCsvValueOnImport
+} from './securityUtils';
 
-// --- TYPES ---
-export interface Task {
-  id: string;
-  type?: 'tache' | 'jalon' | string;
-  name: string;
-  phase?: string;
-  antecedent?: string;
-  moisStr?: string;
-  assignee?: string;
-  responsabilite?: string;
-  responsableTresorerie?: string;
-  startDate: string;
-  endDate: string;
-  dateDecaissementPrevu?: string;
-  dateDecaissementReel?: string;
-  montantDecaissementPrevu?: number | string;
-  montantDecaissementReel?: number | string;
-  coutPlanifie: number;
-  valeurAcquise?: number;
-  coutReel: number;
-  status: 'À faire' | 'En cours' | 'Terminé' | 'Bloqué' | string;
-  motifBlocage?: string;
-  valideVA?: boolean;
-  dateVA?: string;
-}
+// Chargement asynchrone code-splitté (Next.js / React 19 Suspense + Préchargement Idle) pour une fluidité maximale
+const GanttAndTreeView = lazy(() =>
+  import('./components/GanttAndTreeView').then(m => ({
+    default: m.GanttAndTreeView
+  }))
+);
+const FicheTechniquePages = lazy(() =>
+  import('./components/FicheTechniquePages').then(m => ({
+    default: m.FicheTechniquePages
+  }))
+);
+const DocumentGeneratorView = lazy(() =>
+  import('./components/DocumentGeneratorView').then(m => ({
+    default: m.DocumentGeneratorView
+  }))
+);
+const OperationalMatrices = lazy(() =>
+  import('./components/OperationalMatrices').then(m => ({
+    default: m.OperationalMatrices
+  }))
+);
+const CategoriesActorsView = lazy(() =>
+  import('./components/CategoriesActorsView').then(m => ({
+    default: m.CategoriesActorsView
+  }))
+);
+const QrBarcodeScannerModal = lazy(() =>
+  import('./components/QrBarcodeScannerModal').then(m => ({
+    default: m.QrBarcodeScannerModal
+  }))
+);
+const InternalActorProfileModal = lazy(() =>
+  import('./components/InternalActorProfileModal').then(m => ({
+    default: m.InternalActorProfileModal
+  }))
+);
+const SuperAdminDashboardView = lazy(() =>
+  import('./components/SuperAdminDashboardView').then(m => ({
+    default: m.SuperAdminDashboardView
+  }))
+);
+const FaabGarEvmTabs = lazy(() =>
+  import('./components/FaabGarEvmTabs').then(m => ({
+    default: m.FaabGarEvmTabs
+  }))
+);
+import {
+  auth,
+  googleProvider,
+  signInWithPopup,
+  signOut,
+  onAuthStateChanged,
+  FirebaseUser,
+  isSuperAdminEmail,
+  mapFirebaseSdkUser
+} from './firebase';
+import {
+  syncFirebaseUserToRegistry,
+  isSessionPinVerifiedForUser,
+  setSessionPinVerifiedForUser
+} from './services/superAdminService';
+import {
+  SuperAdminAuthModal,
+  AuthModalStep
+} from './components/SuperAdminAuthModal';
+import { AuthStatusButton } from './components/AuthStatusButton';
+import { FirebaseAuthHelpModal } from './components/FirebaseAuthHelpModal';
 
-export interface Project {
-  id: string;
-  name: string;
-  budgetsAnnuels?: Record<string, string | number>;
-  tasks: Task[];
-  dossierName?: string;
-  dossierId?: string;
-  axeName?: string;
-  axeId?: string;
-  isReadOnly?: boolean;
-}
+export function App() {
+  const [isHydrated, setIsHydrated] = useState(false);
+  const [userProfile, setUserProfile] = useState<UserProfile>(defaultUserProfile);
+  const [dossiers, setDossiers] = useState<Dossier[]>(initialDossiers);
+  const [activeDossierId, setActiveDossierId] = useState<string>(
+    initialDossiers[0].id
+  );
+  const [language, setLanguage] = useState<LanguageCode>('FR');
+  const [currency, setCurrency] = useState<CurrencyCode>('FCFA');
+  const [theme, setTheme] = useState<ThemeMode>('light');
+  const [lastJsonFileName, setLastJsonFileName] = useState<string>(
+    'faab_plan_sauvegarde.json'
+  );
+  const [activeTab, setActiveTab] = useState<string>('accueil');
+  const [customDocsData, setCustomDocsData] =
+    useState<CustomDocsMap>(defaultCustomDocsData);
 
-export interface Axe {
-  id: string;
-  name: string;
-  budget?: number;
-  projects: Project[];
-}
+  // Firebase Authentication, PIN Verification & Exclusive Role States
+  const [authUser, setAuthUser] = useState<FirebaseUser | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
+  const [isSigningIn, setIsSigningIn] = useState<boolean>(false);
+  const [isAuthHelpModalOpen, setIsAuthHelpModalOpen] = useState<boolean>(false);
+  const [authErrorCode, setAuthErrorCode] = useState<string>('auth/unauthorized-domain');
+  const [authErrorMessage, setAuthErrorMessage] = useState<string>('');
+  const [isPinVerified, setIsPinVerified] = useState<boolean>(false);
+  const [isSuperAdminAuthModalOpen, setIsSuperAdminAuthModalOpen] =
+    useState<boolean>(false);
+  const [superAdminAuthModalStep, setSuperAdminAuthModalStep] =
+    useState<AuthModalStep>('pin_and_biometric');
+  const [isDeviceLocked, setIsDeviceLocked] = useState<boolean>(false);
 
-export interface Dossier {
-  id: string;
-  name: string;
-  institution?: string;
-  isReadOnly?: boolean;
-  startYear?: string;
-  endYear?: string;
-  axes: Axe[];
-}
+  // Slidebar & UI states
+  const [isSlidebarOpen, setIsSlidebarOpen] = useState(false);
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isGlobalScannerOpen, setIsGlobalScannerOpen] = useState(false);
+  const [isCategoryProfileModalOpen, setIsCategoryProfileModalOpen] = useState(false);
+  const [selectedCategoryActorName, setSelectedCategoryActorName] = useState<string>(
+    defaultUserProfile.fullName
+  );
 
-// --- COULEURS & PHASES STANDARD ---
-const COLORS: Record<string, string> = { 
-  'Terminé': '#10B981', 
-  'En cours': '#3B82F6', 
-  'Bloqué': '#EF4444', 
-  'À faire': '#9CA3AF' 
-};
+  // Filters
+  const [filterAxeId, setFilterAxeId] = useState<string>('ALL');
+  const [filterProjectId, setFilterProjectId] = useState<string>('ALL');
 
-const DISTRIBUTION_COLORS = [
-  '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', 
-  '#14B8A6', '#F97316', '#06B6D4', '#84CC16', '#6366F1', '#D946EF', '#64748B', '#0EA5E9'
-];
+  // PERT View & Zoom (down to 10% = 0.10)
+  const [pertZoom, setPertZoom] = useState<number>(1);
+  const [pertViewMode, setPertViewMode] = useState<'graph' | 'table'>('graph');
 
-const STANDARD_PHASES = [
-  'PHASE DU CYCLE : AVANT PROJET',
-  'PHASE DU CYCLE : CONCEPTION',
-  'PHASE DU CYCLE : PLANIFICATION',
-  'PHASE DU CYCLE : EXÉCUTION & SUIVI',
-  'PHASE DU CYCLE : CLÔTURE'
-];
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const csvPlanInputRef = useRef<HTMLInputElement>(null);
+  const csvRaciInputRef = useRef<HTMLInputElement>(null);
+  const fileHandleRef = useRef<any>(null);
+  const [csvMenuOpen, setCsvMenuOpen] = useState<
+    'slidebar-import' | 'slidebar-export' | 'header-import' | 'header-export' | null
+  >(null);
 
-// Données exemple pour démonstration en un clic
-const SAMPLE_DEMO_DATA: Dossier[] = [
-  {
-    id: 'demo-dossier-1',
-    name: 'Programme National d\'Appui au Développement Agricole (PNADA)',
-    institution: 'Ministère de l\'Agriculture & Développement Rural',
-    isReadOnly: false,
-    startYear: '2025',
-    endYear: '2027',
-    axes: [
-      {
-        id: 'demo-axe-1',
-        name: 'Composante 1 : Aménagement hydro-agricole et périmètres irrigués',
-        budget: 450,
-        projects: [
-          {
-            id: 'demo-proj-1',
-            name: 'Réhabilitation des barrages collinaires et digues de rétention',
-            budgetsAnnuels: { '2025': '150', '2026': '180', '2027': '120' },
-            tasks: [
-              {
-                id: 't-101',
-                type: 'tache',
-                name: 'Études d\'impact environnemental et géotechnique',
-                phase: 'PHASE DU CYCLE : AVANT PROJET',
-                assignee: 'Bureau Veritas & Labo National',
-                responsableTresorerie: 'Banque Mondiale (IDA)',
-                startDate: '2025-01-10',
-                endDate: '2025-03-25',
-                dateDecaissementPrevu: '2025-01-15',
-                dateDecaissementReel: '2025-01-20',
-                montantDecaissementPrevu: 40,
-                montantDecaissementReel: 40,
-                coutPlanifie: 40,
-                valeurAcquise: 40,
-                coutReel: 38,
-                status: 'Terminé',
-                motifBlocage: '',
-                valideVA: true,
-                dateVA: '2025-03-20'
-              },
-              {
-                id: 't-102',
-                type: 'jalon',
-                name: 'Validation du rapport d\'avant-projet sommaire (APS)',
-                phase: 'PHASE DU CYCLE : AVANT PROJET',
-                assignee: 'Comité Technique Interministériel',
-                responsableTresorerie: 'Trésor Public',
-                startDate: '2025-03-30',
-                endDate: '2025-03-30',
-                dateDecaissementPrevu: '2025-03-30',
-                dateDecaissementReel: '2025-03-30',
-                montantDecaissementPrevu: 5,
-                montantDecaissementReel: 5,
-                coutPlanifie: 5,
-                valeurAcquise: 5,
-                coutReel: 5,
-                status: 'Terminé',
-                motifBlocage: '',
-                valideVA: true,
-                dateVA: '2025-03-30'
-              },
-              {
-                id: 't-103',
-                type: 'tache',
-                name: 'Élaboration du DAO et contractualisation des entreprises de BTP',
-                phase: 'PHASE DU CYCLE : CONCEPTION',
-                assignee: 'Cellule Passation des Marchés',
-                responsableTresorerie: 'BAD (Fonds FAD)',
-                startDate: '2025-04-01',
-                endDate: '2025-06-30',
-                dateDecaissementPrevu: '2025-04-15',
-                dateDecaissementReel: '2025-04-20',
-                montantDecaissementPrevu: 30,
-                montantDecaissementReel: 30,
-                coutPlanifie: 30,
-                valeurAcquise: 30,
-                coutReel: 32,
-                status: 'Terminé',
-                motifBlocage: '',
-                valideVA: true,
-                dateVA: '2025-06-25'
-              },
-              {
-                id: 't-104',
-                type: 'tache',
-                name: 'Travaux de terrassement et confortement des digues prioritaires',
-                phase: 'PHASE DU CYCLE : EXÉCUTION & SUIVI',
-                assignee: 'Groupement BTP Sahel',
-                responsableTresorerie: 'Banque Mondiale (IDA)',
-                startDate: '2025-07-01',
-                endDate: '2025-12-15',
-                dateDecaissementPrevu: '2025-07-10',
-                dateDecaissementReel: '2025-08-05',
-                montantDecaissementPrevu: 75,
-                montantDecaissementReel: 60,
-                coutPlanifie: 75,
-                valeurAcquise: 55,
-                coutReel: 62,
-                status: 'En cours',
-                motifBlocage: ''
-              },
-              {
-                id: 't-105',
-                type: 'tache',
-                name: 'Fourniture et pose des vannes motrices télécommandées',
-                phase: 'PHASE DU CYCLE : EXÉCUTION & SUIVI',
-                assignee: 'HydroMéca Tech',
-                responsableTresorerie: 'BAD (Fonds FAD)',
-                startDate: '2025-09-01',
-                endDate: '2025-11-30',
-                dateDecaissementPrevu: '2025-09-15',
-                dateDecaissementReel: '',
-                montantDecaissementPrevu: 45,
-                montantDecaissementReel: 0,
-                coutPlanifie: 45,
-                valeurAcquise: 10,
-                coutReel: 15,
-                status: 'Bloqué',
-                motifBlocage: 'Retard d\'acheminement douanier au port autonome'
-              }
-            ]
-          }
-        ]
-      },
-      {
-        id: 'demo-axe-2',
-        name: 'Composante 2 : Recherche agronomique et semences résilientes',
-        budget: 280,
-        projects: [
-          {
-            id: 'demo-proj-2',
-            name: 'Multiplication et diffusion de variétés biofortifiées de manioc et maïs',
-            budgetsAnnuels: { '2025': '100', '2026': '100', '2027': '80' },
-            tasks: [
-              {
-                id: 't-201',
-                type: 'tache',
-                name: 'Sélection participative en stations de recherche expérimentales',
-                phase: 'PHASE DU CYCLE : PLANIFICATION',
-                assignee: 'Institut National de Recherche Agronomique',
-                responsableTresorerie: 'Union Européenne (Fonds FED)',
-                startDate: '2025-02-01',
-                endDate: '2025-05-30',
-                dateDecaissementPrevu: '2025-02-15',
-                dateDecaissementReel: '2025-02-18',
-                montantDecaissementPrevu: 35,
-                montantDecaissementReel: 35,
-                coutPlanifie: 35,
-                valeurAcquise: 35,
-                coutReel: 34,
-                status: 'Terminé',
-                valideVA: true,
-                dateVA: '2025-05-25'
-              },
-              {
-                id: 't-202',
-                type: 'tache',
-                name: 'Mise en place de 120 parcelles vitrines chez les coopératives',
-                phase: 'PHASE DU CYCLE : EXÉCUTION & SUIVI',
-                assignee: 'Agence Nationale d\'Appui Rural',
-                responsableTresorerie: 'Union Européenne (Fonds FED)',
-                startDate: '2025-06-01',
-                endDate: '2025-10-30',
-                dateDecaissementPrevu: '2025-06-15',
-                dateDecaissementReel: '2025-06-25',
-                montantDecaissementPrevu: 50,
-                montantDecaissementReel: 50,
-                coutPlanifie: 50,
-                valeurAcquise: 40,
-                coutReel: 42,
-                status: 'En cours'
-              },
-              {
-                id: 't-203',
-                type: 'tache',
-                name: 'Campagne d\'audit agronomique et certification des semences',
-                phase: 'PHASE DU CYCLE : CLÔTURE',
-                assignee: 'Direction de la Protection des Végétaux',
-                responsableTresorerie: 'Budget National',
-                startDate: '2025-11-01',
-                endDate: '2025-12-20',
-                dateDecaissementPrevu: '2025-11-10',
-                dateDecaissementReel: '',
-                montantDecaissementPrevu: 15,
-                montantDecaissementReel: 0,
-                coutPlanifie: 15,
-                valeurAcquise: 0,
-                coutReel: 0,
-                status: 'À faire'
-              }
-            ]
-          }
-        ]
-      }
-    ]
-  }
-];
+  // Homepage section scroll-spy & horizontal centering in navbar
+  const [activeHomeSection, setActiveHomeSection] = useState<string>(
+    'section-presentation'
+  );
+  const homeNavScrollRef = useRef<HTMLDivElement>(null);
+  const homeNavBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
-export default function App() {
-  const [activeTab, setActiveTab] = useState<'accueil' | 'dashboard' | 'projects' | 'ptba' | 'processus'>('accueil'); 
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  
-  // Initialisation avec sauvegarde locale persistante
-  const [data, setData] = useState<Dossier[]>(() => {
-    try {
-      const savedData = localStorage.getItem('universal_budget_data_v1');
-      if (savedData) {
-        const parsed = JSON.parse(savedData);
-        if (Array.isArray(parsed)) return parsed;
-      }
-      return [];
-    } catch (e) {
-      console.error("Erreur de chargement des données locales :", e);
-      return [];
-    }
-  });
-
-  // Sauvegarde automatique
   useEffect(() => {
-    localStorage.setItem('universal_budget_data_v1', JSON.stringify(data));
-  }, [data]);
+    if (activeTab !== 'accueil') return;
 
-  const [filterProcessusDossier, setFilterProcessusDossier] = useState('FULL');
-  const [filterProcessusYear, setFilterProcessusYear] = useState('ALL');
-  const [filterProcessusAxe, setFilterProcessusAxe] = useState('FULL');
-  const [filterProcessusProj, setFilterProcessusProj] = useState('FULL');
-  const [filterProcessusQuarter, setFilterProcessusQuarter] = useState('FULL');
-  
-  const [filterDashDossier, setFilterDashDossier] = useState('FULL');
-  const [filterDashYear, setFilterDashYear] = useState('ALL');
-  const [filterDashAxe, setFilterDashAxe] = useState('FULL');
-  const [filterDashProj, setFilterDashProj] = useState('FULL');
-  const [filterDashQuarter, setFilterDashQuarter] = useState('FULL');
+    const sectionIds = [
+      'section-presentation',
+      'section-utilisation',
+      'section-documents',
+      'section-cibles',
+      'section-offres',
+      'section-methodologie',
+      'section-sauvegarde',
+      'section-credits'
+    ];
 
-  const [filterPTBADossier, setFilterPTBADossier] = useState('FULL');
-  const [filterPTBAYear, setFilterPTBAYear] = useState('ALL');
-  const [filterPTBAAxe, setFilterPTBAAxe] = useState('FULL');
-  const [filterPTBAProj, setFilterPTBAProj] = useState('FULL');
-  const [filterPTBAQuarter, setFilterPTBAQuarter] = useState('FULL');
+    const detectActiveSection = () => {
+      const scrollY = window.scrollY || window.pageYOffset;
+      const viewportHeight = window.innerHeight;
+      const docHeight = document.documentElement.scrollHeight;
 
-  // --- États pour l'édition en ligne des tâches ---
-  const [editingTaskId, setEditingTaskId] = useState<string | null>(null); 
-  const [editingPhase, setEditingPhase] = useState<string | null>(null);
-  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
-  const [editFormData, setEditFormData] = useState<Partial<Task>>({});
+      if (scrollY < 50) {
+        setActiveHomeSection('section-presentation');
+        return;
+      }
 
-  // Charger un exemple de démonstration
-  const handleLoadDemoData = () => {
-    setData(SAMPLE_DEMO_DATA);
-    setFilterProcessusDossier(SAMPLE_DEMO_DATA[0].id);
-    setFilterPTBADossier(SAMPLE_DEMO_DATA[0].id);
-    setFilterDashDossier(SAMPLE_DEMO_DATA[0].id);
-  };
+      if (scrollY + viewportHeight >= docHeight - 40) {
+        setActiveHomeSection('section-credits');
+        return;
+      }
 
-  // Vider les données (remise à blanc)
-  const handleClearData = () => {
-    if (window.confirm("Êtes-vous sûr de vouloir réinitialiser la base de données ? Toutes les données seront effacées.")) {
-      setData([]);
-      setFilterProcessusDossier('FULL');
-      setFilterPTBADossier('FULL');
-      setFilterDashDossier('FULL');
-      setActiveTab('accueil');
-    }
-  };
+      const readingLine = Math.min(200, viewportHeight * 0.28);
+      let currentId = sectionIds[0];
 
-  // Déterminer l'institution active pour le titre
-  const activeInstitution = useMemo(() => {
-    if (filterProcessusDossier !== 'FULL') {
-      const dossier = data.find(d => d.id === filterProcessusDossier);
-      return dossier ? dossier.institution : '';
-    } else if (filterPTBADossier !== 'FULL') {
-      const dossier = data.find(d => d.id === filterPTBADossier);
-      return dossier ? dossier.institution : '';
-    } else if (filterDashDossier !== 'FULL') {
-      const dossier = data.find(d => d.id === filterDashDossier);
-      return dossier ? dossier.institution : '';
-    }
-    const firstWithInst = data.find(d => d.institution);
-    return firstWithInst?.institution || '';
-  }, [filterProcessusDossier, filterPTBADossier, filterDashDossier, data]);
-
-  const handleAddTask = (projectId: string, phase: string) => {
-    setEditingTaskId('new');
-    setEditingProjectId(projectId);
-    setEditingPhase(phase);
-    setEditFormData({
-      type: 'tache',
-      name: '',
-      antecedent: '—',
-      moisStr: '',
-      assignee: '',
-      responsabilite: '',
-      responsableTresorerie: '',
-      startDate: new Date().toISOString().split('T')[0],
-      endDate: new Date().toISOString().split('T')[0],
-      dateDecaissementPrevu: '',
-      dateDecaissementReel: '',
-      montantDecaissementPrevu: '',
-      montantDecaissementReel: '',
-      coutPlanifie: 0,
-      valeurAcquise: 0,
-      coutReel: 0,
-      status: 'À faire',
-      motifBlocage: ''
-    });
-  };
-
-  const handleEditTask = (projectId: string, phase: string, task: Task) => {
-    setEditingTaskId(task.id);
-    setEditingProjectId(projectId);
-    setEditingPhase(phase);
-    setEditFormData({
-      type: task.type || 'tache',
-      name: task.name || '',
-      antecedent: task.antecedent || '—',
-      moisStr: task.moisStr || '',
-      assignee: task.assignee || '',
-      responsabilite: task.responsabilite || '',
-      responsableTresorerie: task.responsableTresorerie || '',
-      startDate: task.startDate || '',
-      endDate: task.endDate || '',
-      dateDecaissementPrevu: task.dateDecaissementPrevu || '',
-      dateDecaissementReel: task.dateDecaissementReel || '',
-      montantDecaissementPrevu: task.montantDecaissementPrevu !== undefined ? task.montantDecaissementPrevu : '',
-      montantDecaissementReel: task.montantDecaissementReel !== undefined ? task.montantDecaissementReel : (task.coutReel || ''),
-      coutPlanifie: task.coutPlanifie || 0,
-      valeurAcquise: task.valeurAcquise !== undefined ? task.valeurAcquise : ((task.status === 'Terminé' || task.valideVA) ? (task.coutPlanifie || 0) : 0),
-      coutReel: task.coutReel || 0,
-      status: task.status || 'À faire',
-      motifBlocage: task.motifBlocage || ''
-    });
-  };
-
-  const handleSaveTask = () => {
-    if (!editFormData.name || !editingProjectId) return;
-    const newData = [...data];
-    let found = false;
-    
-    for (const d of newData) {
-      if (d.axes) {
-        for (const a of d.axes) {
-          if (a.projects) {
-            const p = a.projects.find(proj => proj.id === editingProjectId);
-            if (p) {
-              if (!p.tasks) p.tasks = [];
-              const valideVA = editFormData.status === 'Terminé';
-              const dateVA = valideVA ? new Date().toISOString().split('T')[0] : '';
-              const finalMotif = editFormData.status === 'Bloqué' ? editFormData.motifBlocage : '';
-
-              if (editingTaskId === 'new') {
-                p.tasks.push({
-                  id: `t-${Date.now()}`,
-                  phase: editingPhase || STANDARD_PHASES[0],
-                  name: editFormData.name || '',
-                  type: editFormData.type || 'tache',
-                  antecedent: editFormData.antecedent || '—',
-                  moisStr: editFormData.moisStr || '',
-                  assignee: editFormData.assignee || '',
-                  responsabilite: editFormData.responsabilite || '',
-                  responsableTresorerie: editFormData.responsableTresorerie || '',
-                  startDate: editFormData.startDate || new Date().toISOString().split('T')[0],
-                  endDate: editFormData.endDate || new Date().toISOString().split('T')[0],
-                  dateDecaissementPrevu: editFormData.dateDecaissementPrevu || '',
-                  dateDecaissementReel: editFormData.dateDecaissementReel || '',
-                  montantDecaissementPrevu: editFormData.montantDecaissementPrevu ?? '',
-                  montantDecaissementReel: editFormData.montantDecaissementReel ?? '',
-                  coutPlanifie: Number(editFormData.coutPlanifie) || 0,
-                  valeurAcquise: Number(editFormData.valeurAcquise) || (valideVA ? (Number(editFormData.coutPlanifie) || 0) : 0),
-                  coutReel: Number(editFormData.coutReel) || 0,
-                  status: editFormData.status || 'À faire',
-                  motifBlocage: finalMotif,
-                  valideVA,
-                  dateVA
-                });
-              } else {
-                const tIndex = p.tasks.findIndex(t => t.id === editingTaskId);
-                if (tIndex > -1) {
-                  p.tasks[tIndex] = { 
-                    ...p.tasks[tIndex], 
-                    ...editFormData,
-                    coutPlanifie: Number(editFormData.coutPlanifie) || 0,
-                    valeurAcquise: Number(editFormData.valeurAcquise) || (valideVA ? (Number(editFormData.coutPlanifie) || 0) : 0),
-                    coutReel: Number(editFormData.coutReel) || 0,
-                    motifBlocage: finalMotif,
-                    valideVA,
-                    dateVA: valideVA && !p.tasks[tIndex].dateVA ? dateVA : p.tasks[tIndex].dateVA
-                  } as Task;
-                }
-              }
-              
-              // Tri automatique par Phase puis par Date de début
-              p.tasks.sort((a, b) => {
-                const phaseA = a.phase ? STANDARD_PHASES.indexOf(a.phase) : 0;
-                const phaseB = b.phase ? STANDARD_PHASES.indexOf(b.phase) : 0;
-                if (phaseA !== phaseB) return phaseA - phaseB;
-                return new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
-              });
-
-              found = true;
-              break;
-            }
-          }
+      for (const id of sectionIds) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+        const rect = el.getBoundingClientRect();
+        if (rect.top <= readingLine) {
+          currentId = id;
         }
       }
-      if (found) break;
+
+      setActiveHomeSection(currentId);
+    };
+
+    detectActiveSection();
+    window.addEventListener('scroll', detectActiveSection, { passive: true });
+    window.addEventListener('resize', detectActiveSection, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', detectActiveSection);
+      window.removeEventListener('resize', detectActiveSection);
+    };
+  }, [activeTab]);
+
+  // Horizontally center the active section title in the navbar whenever activeHomeSection changes
+  useEffect(() => {
+    if (activeTab !== 'accueil') return;
+    const navContainer = homeNavScrollRef.current;
+    const activeBtn = homeNavBtnRefs.current[activeHomeSection];
+    if (!navContainer || !activeBtn) return;
+
+    const centerActiveButton = () => {
+      const navRect = navContainer.getBoundingClientRect();
+      const btnRect = activeBtn.getBoundingClientRect();
+      const currentScrollLeft = navContainer.scrollLeft;
+      const btnCenterInScroll =
+        btnRect.left - navRect.left + currentScrollLeft + btnRect.width / 2;
+      const targetScrollLeft = btnCenterInScroll - navContainer.clientWidth / 2;
+      navContainer.scrollTo({
+        left: Math.max(0, targetScrollLeft),
+        behavior: 'smooth'
+      });
+    };
+
+    const rafId = requestAnimationFrame(centerActiveButton);
+    return () => cancelAnimationFrame(rafId);
+  }, [activeHomeSection, activeTab, language]);
+
+  // Hydrate isolated workspace from IndexedDB strictly for the authenticated Regular User (UID)
+  // Neither other users nor the Super Administrator can access another user's programmes or profile.
+  const [hydratedUid, setHydratedUid] = useState<string | null>(null);
+
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    // If not authenticated or if Super Administrator, clear active storage UID and reset in-memory workspace
+    if (!authUser || isSuperAdminEmail(authUser.email)) {
+      setActiveUserStorageUid(null);
+      setActiveExportUserUid(null);
+      setHydratedUid(null);
+      setUserProfile({ ...defaultUserProfile });
+      setDossiers(JSON.parse(JSON.stringify(initialDossiers)));
+      setActiveDossierId(initialDossiers[0].id);
+      setCustomDocsData({ ...defaultCustomDocsData });
+      return;
     }
-    
-    setData(newData);
-    setEditingTaskId(null);
+
+    const currentUid = authUser.uid;
+    setActiveUserStorageUid(currentUid);
+    setActiveExportUserUid(currentUid);
+    void initExportStorage();
+
+    let cancelled = false;
+    loadAppStateFromIDB(currentUid).then(saved => {
+      if (cancelled) return;
+      if (saved) {
+        if (saved.userProfile) {
+          setUserProfile(saved.userProfile);
+        } else {
+          setUserProfile({
+            ...defaultUserProfile,
+            fullName:
+              authUser.displayName ||
+              authUser.email?.split('@')[0] ||
+              'Utilisateur FAAB BUD',
+            email: authUser.email || ''
+          });
+        }
+        if (Array.isArray(saved.dossiers) && saved.dossiers.length > 0) {
+          setDossiers(saved.dossiers);
+        } else {
+          setDossiers(JSON.parse(JSON.stringify(initialDossiers)));
+        }
+        if (saved.activeDossierId) {
+          setActiveDossierId(saved.activeDossierId);
+        } else {
+          setActiveDossierId(initialDossiers[0].id);
+        }
+        if (saved.language) setLanguage(saved.language);
+        if (saved.currency) setCurrency(saved.currency);
+        if (saved.theme) setTheme(saved.theme);
+        if (saved.lastJsonFileName) setLastJsonFileName(saved.lastJsonFileName);
+        if (saved.customDocsData) {
+          setCustomDocsData({
+            ...defaultCustomDocsData,
+            ...saved.customDocsData
+          });
+        } else {
+          setCustomDocsData({ ...defaultCustomDocsData });
+        }
+      } else {
+        // First login for this specific Regular User UID -> fresh isolated workspace
+        const freshDossiers: Dossier[] = JSON.parse(
+          JSON.stringify(initialDossiers)
+        );
+        const freshProfile: UserProfile = {
+          ...defaultUserProfile,
+          fullName:
+            authUser.displayName ||
+            authUser.email?.split('@')[0] ||
+            'Utilisateur FAAB BUD',
+          email: authUser.email || ''
+        };
+        setUserProfile(freshProfile);
+        setDossiers(freshDossiers);
+        setActiveDossierId(freshDossiers[0].id);
+        setCustomDocsData({ ...defaultCustomDocsData });
+      }
+      setHydratedUid(currentUid);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authUser?.uid, authUser?.email]);
+
+  // Auto-persist to IndexedDB (strictly scoped to the authenticated Regular User UID) & sync dark mode
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    document.documentElement.lang = language === 'EN' ? 'en' : 'fr';
+
+    if (
+      !isHydrated ||
+      !authUser ||
+      isSuperAdminEmail(authUser.email) ||
+      hydratedUid !== authUser.uid
+    ) {
+      return;
+    }
+
+    void saveAppStateToIDB(
+      {
+        userProfile,
+        dossiers,
+        activeDossierId,
+        language,
+        currency,
+        theme,
+        lastJsonFileName,
+        activeTab,
+        customDocsData
+      },
+      authUser.uid
+    );
+  }, [
+    isHydrated,
+    hydratedUid,
+    authUser,
+    userProfile,
+    dossiers,
+    activeDossierId,
+    language,
+    currency,
+    theme,
+    lastJsonFileName,
+    activeTab,
+    customDocsData
+  ]);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  // Firebase Auth State Listener (Strictly driven by Firebase SDK)
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, user => {
+      if (user) {
+        const mapped = mapFirebaseSdkUser(user);
+        setAuthUser(mapped);
+        void syncFirebaseUserToRegistry(mapped);
+
+        const alreadyPinVerified = isSessionPinVerifiedForUser(mapped.uid);
+        setIsPinVerified(alreadyPinVerified);
+
+        if (alreadyPinVerified) {
+          // Dissociation stricte : le Super Admin n'a accès qu'à 'super_admin' (ou 'accueil'), l'utilisateur qu'aux onglets utilisateurs
+          if (isSuperAdminEmail(mapped.email)) {
+            setActiveTab(prev => (prev === 'accueil' ? 'accueil' : 'super_admin'));
+          } else {
+            setActiveTab(prev => (prev === 'super_admin' ? 'projects' : prev));
+          }
+        } else {
+          // Demander systématiquement le Code PIN (défaut "0000") ou Touch ID / Face ID après l'authentification Google
+          setSuperAdminAuthModalStep('pin_and_biometric');
+          setIsSuperAdminAuthModalOpen(true);
+        }
+
+        try {
+          localStorage.setItem(
+            'faab_auth_session',
+            JSON.stringify({
+              uid: user.uid,
+              authenticatedAt: Date.now()
+            })
+          );
+        } catch {}
+      } else {
+        setAuthUser(null);
+        setIsPinVerified(false);
+        setSessionPinVerifiedForUser(null, false);
+        setIsDeviceLocked(false);
+        setIsSuperAdminAuthModalOpen(false);
+        setActiveTab('accueil');
+        try {
+          localStorage.removeItem('faab_auth_session');
+        } catch {}
+      }
+      setIsAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Préchargement asynchrone en tâche de fond (Idle Prefetching) des modules selon le rôle exclusif
+  useEffect(() => {
+    if (!isHydrated || !authUser) return;
+    const preloadModules = () => {
+      if (isSuperAdminEmail(authUser.email)) {
+        void import('./components/SuperAdminDashboardView');
+      } else {
+        void import('./components/OperationalMatrices');
+        void import('./components/GanttAndTreeView');
+        void import('./components/CategoriesActorsView');
+        void import('./components/FicheTechniquePages');
+        void import('./components/DocumentGeneratorView');
+      }
+    };
+    if (typeof (window as any).requestIdleCallback === 'function') {
+      const id = (window as any).requestIdleCallback(preloadModules, {
+        timeout: 2000
+      });
+      return () => (window as any).cancelIdleCallback?.(id);
+    } else {
+      const timer = setTimeout(preloadModules, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [isHydrated, authUser]);
+
+  // Lorsqu'on clique sur "Se connecter", Google Sign-In authentifie EN PREMIER, puis ouvre immédiatement le popup Code PIN (défaut "0000") / Touch ID / Face ID
+  const handleGoogleSignIn = async () => {
+    // Si déjà authentifié par Google mais en attente de validation du Code PIN, ré-afficher le popup PIN
+    if (authUser && !isPinVerified) {
+      setSuperAdminAuthModalStep('pin_and_biometric');
+      setIsSuperAdminAuthModalOpen(true);
+      return;
+    }
+
+    try {
+      setIsSigningIn(true);
+      googleProvider.setCustomParameters({ prompt: 'select_account' });
+      const res = await signInWithPopup(auth, googleProvider);
+      if (res.user) {
+        const mapped = mapFirebaseSdkUser(res.user);
+        setAuthUser(mapped);
+        void syncFirebaseUserToRegistry(mapped);
+        // Exiger la saisie du Code PIN (par défaut "0000") ou Touch ID / Face ID à chaque nouvelle connexion Google
+        setIsPinVerified(false);
+        setSessionPinVerifiedForUser(mapped.uid, false);
+        setSuperAdminAuthModalStep('pin_and_biometric');
+        setIsSuperAdminAuthModalOpen(true);
+      }
+    } catch (err: any) {
+      const code = err?.code || 'auth/unknown-error';
+      const msg = err?.message || 'Erreur lors de la connexion Google Firebase.';
+      setAuthErrorCode(code);
+      setAuthErrorMessage(msg);
+      if (
+        code !== 'auth/popup-closed-by-user' &&
+        code !== 'auth/cancelled-popup-request'
+      ) {
+        setIsAuthHelpModalOpen(true);
+      }
+    } finally {
+      setIsSigningIn(false);
+    }
+  };
+
+  const handleDirectGooglePopupRetry = handleGoogleSignIn;
+
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+    } catch (err) {
+      console.warn('Sign Out notice:', err);
+    } finally {
+      try {
+        localStorage.removeItem('faab_auth_session');
+      } catch {}
+      setAuthUser(null);
+      setIsPinVerified(false);
+      setSessionPinVerifiedForUser(null, false);
+      setIsDeviceLocked(false);
+      setIsSuperAdminAuthModalOpen(false);
+      setIsSlidebarOpen(false);
+      setActiveTab('accueil');
+      showToast(
+        language === 'EN'
+          ? 'You have been logged out. Please sign in with Google to reconnect.'
+          : 'Vous avez été déconnecté. Authentifiez-vous via Google Sign-In pour vous reconnecter.'
+      );
+    }
+  };
+
+  const activeDossier = useMemo<Dossier>(() => {
+    return dossiers.find(d => d.id === activeDossierId) || dossiers[0];
+  }, [dossiers, activeDossierId]);
+
+  const todayISO = getTodayISO();
+  const t = translations[language] || translations.FR;
+
+  // Filtered Axes & Projects for operational views
+  const filteredAxes = useMemo<Axe[]>(() => {
+    const axes = activeDossier.axes || [];
+    if (filterAxeId === 'ALL') return axes;
+    return axes.filter(a => a.id === filterAxeId);
+  }, [activeDossier, filterAxeId]);
+
+  const availableProjectsInFilter = useMemo<Project[]>(() => {
+    return filteredAxes.flatMap(a => a.projects || []);
+  }, [filteredAxes]);
+
+  const filteredProjects = useMemo<Project[]>(() => {
+    if (filterProjectId === 'ALL') return availableProjectsInFilter;
+    return availableProjectsInFilter.filter(p => p.id === filterProjectId);
+  }, [availableProjectsInFilter, filterProjectId]);
+
+  // Flatten tasks with codes & metrics for Dashboard & Kanban
+  const flatTaskRows = useMemo(() => {
+    const list: Array<{
+      axeId: string;
+      axeName: string;
+      projectId: string;
+      projectName: string;
+      task: Task;
+      code: string;
+      antecedentCode: string;
+      allProjectTasks: Array<{ id: string; code: string; name: string }>;
+      metrics: ReturnType<typeof computeTaskMetrics>;
+    }> = [];
+
+    filteredAxes.forEach(axe => {
+      (axe.projects || [])
+        .filter(pr => filterProjectId === 'ALL' || pr.id === filterProjectId)
+        .forEach(proj => {
+          const rawTasks = proj.tasks || [];
+          const codeMap = new Map<string, string>();
+          const projectTaskOptions: Array<{
+            id: string;
+            code: string;
+            name: string;
+          }> = [];
+
+          STANDARD_PHASES.forEach((pName, pIdx) => {
+            const pTasks = rawTasks.filter(tk => tk.phase === pName);
+            pTasks.forEach((tk, tIdx) => {
+              const c = `${tk.type === 'jalon' ? 'J' : 'T'}.${pIdx + 1}.${
+                tIdx + 1
+              }`;
+              codeMap.set(tk.id, c);
+              projectTaskOptions.push({ id: tk.id, code: c, name: tk.name });
+            });
+          });
+
+          rawTasks.forEach((tk, idx) => {
+            const code =
+              codeMap.get(tk.id) ||
+              `${tk.type === 'jalon' ? 'J' : 'T'}.1.${idx + 1}`;
+            const antCode =
+              tk.antecedent && tk.antecedent !== '—'
+                ? codeMap.get(tk.antecedent) || tk.antecedent
+                : '—';
+            const metrics = computeTaskMetrics(tk, todayISO);
+            list.push({
+              axeId: axe.id,
+              axeName: axe.name,
+              projectId: proj.id,
+              projectName: proj.name,
+              task: tk,
+              code,
+              antecedentCode: antCode,
+              allProjectTasks: projectTaskOptions.filter(o => o.id !== tk.id),
+              metrics
+            });
+          });
+        });
+    });
+
+    return list;
+  }, [filteredAxes, filterProjectId, todayISO]);
+
+  // Global Dossier KPIs
+  const allDossierTasks = useMemo(() => {
+    return (activeDossier.axes || []).flatMap(a =>
+      (a.projects || []).flatMap(p => p.tasks || [])
+    );
+  }, [activeDossier]);
+
+  const totalBudgetFCFA = useMemo(
+    () => allDossierTasks.reduce((acc, tk) => acc + (Number(tk.budget) || 0), 0),
+    [allDossierTasks]
+  );
+
+  const statusCounts = useMemo(() => {
+    const counts = {
+      Terminé: 0,
+      'En cours': 0,
+      'À faire': 0,
+      Bloqué: 0
+    };
+    allDossierTasks.forEach(tk => {
+      const st = computeTaskMetrics(tk, todayISO).effectiveStatus;
+      counts[st] = (counts[st] || 0) + 1;
+    });
+    return counts;
+  }, [allDossierTasks, todayISO]);
+
+  const completionPct =
+    allDossierTasks.length > 0
+      ? Math.round((statusCounts.Terminé / allDossierTasks.length) * 100)
+      : 0;
+
+  const activeRaciContext = useMemo(
+    () => resolveProgramRaciContext(activeDossier, userProfile),
+    [activeDossier, userProfile]
+  );
+
+  if (!isHydrated || isAuthLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white p-6">
+        <div className="flex flex-col items-center gap-5">
+          <div className="p-2 flex items-center justify-center">
+            <AppLogo className="w-48 h-48 sm:w-60 sm:h-60 animate-pulse" />
+          </div>
+          <div className="flex items-center gap-2.5 text-xs sm:text-sm font-extrabold tracking-widest uppercase text-[#90D5FF] text-center">
+            <div className="w-4 h-4 border-2 border-[#90D5FF] border-t-transparent rounded-full animate-spin" />
+            <span>
+              {!isHydrated
+                ? 'Hydratation IndexedDB FAAB BUD en cours...'
+                : language === 'EN'
+                ? 'Verifying secure session...'
+                : 'Vérification de la session sécurisée...'}
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Strict security flags:
+  // 1. User must be authenticated via Google Sign-In AND have verified their PIN (or Touch ID / Face ID) AND not have locked the device.
+  // 2. Super Admin ('fabien.frikupgeneration@gmail.com') and Standard Users (all other emails) are strictly dissociated:
+  //    - Super Admin ONLY has access to 'super_admin' (and 'accueil').
+  //    - Standard Users ONLY have access to classic user modules (and NEVER 'super_admin').
+  const isUnlocked = Boolean(authUser && isPinVerified && !isDeviceLocked);
+  const isSuperAdminUnlocked = Boolean(
+    isUnlocked && isSuperAdminEmail(authUser?.email)
+  );
+  const isRegularUserUnlocked = Boolean(
+    isUnlocked && !isSuperAdminEmail(authUser?.email)
+  );
+
+  const navigateTo = (tab: string) => {
+    if (tab === 'accueil') {
+      setIsSlidebarOpen(false);
+      startTransition(() => {
+        setActiveTab('accueil');
+      });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    // 1. If not signed in with Google yet -> authenticate via Google Sign-In first
+    if (!authUser) {
+      handleGoogleSignIn();
+      return;
+    }
+
+    // 2. If signed in with Google, but PIN is not verified or device is locked -> open PIN popup
+    if (!isPinVerified || isDeviceLocked) {
+      setIsSlidebarOpen(false);
+      setSuperAdminAuthModalStep(
+        isDeviceLocked ? 'device_locked' : 'pin_and_biometric'
+      );
+      setIsSuperAdminAuthModalOpen(true);
+      return;
+    }
+
+    // 3. Strict dissociation: Super Admin ('fabien.frikupgeneration@gmail.com') cannot access user tabs
+    if (isSuperAdminEmail(authUser.email)) {
+      if (tab !== 'super_admin') {
+        setIsSlidebarOpen(false);
+        startTransition(() => {
+          setActiveTab('super_admin');
+        });
+        showToast(
+          language === 'EN'
+            ? 'Super Administrator account is strictly dissociated from the User workspace.'
+            : 'Le compte Super Administrateur est strictement dissocié de l’espace Utilisateur.'
+        );
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+      setIsSlidebarOpen(false);
+      startTransition(() => {
+        setActiveTab('super_admin');
+      });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    // 4. Strict dissociation: Standard User cannot access 'super_admin'
+    if (tab === 'super_admin') {
+      showToast(
+        language === 'EN'
+          ? 'Access strictly reserved for the Super Administrator.'
+          : 'Accès strictement réservé au Super Administrateur (fabien.frikupgeneration@gmail.com).'
+      );
+      return;
+    }
+
+    setIsSlidebarOpen(false);
+    startTransition(() => {
+      setActiveTab(tab);
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // JSON Save / Overwrite or Export (uniquely for the selected programme)
+  const handleSaveOrExportJSON = async () => {
+    const safeProgSlug = (activeDossier.name || 'programme')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 40);
+
+    const activeDossierDocsData: CustomDocsMap = {
+      ...defaultCustomDocsData,
+      ...(activeDossier.customDocsData || {})
+    };
+
+    const payload = {
+      programmeSelectionne: {
+        ...activeDossier,
+        customDocsData: activeDossierDocsData
+      },
+      dossiers: [
+        {
+          ...activeDossier,
+          customDocsData: activeDossierDocsData
+        }
+      ],
+      activeDossierId: activeDossier.id,
+      userProfile,
+      language,
+      currency,
+      theme,
+      lastJsonFileName,
+      activeTab,
+      customDocsData: activeDossierDocsData
+    };
+    const jsonString = JSON.stringify(payload, null, 2);
+
+    const filename = `FAAB_PLAN_${safeProgSlug.toUpperCase() || 'PROGRAMME'}.json`;
+
+    const res = await saveProgramFile({
+      programName: activeDossier.name,
+      fileName: filename,
+      content: jsonString,
+      mimeType: 'application/json'
+    });
+
+    setLastJsonFileName(filename);
+    if (res.mode === 'directory' || res.mode === 'savepicker') {
+      showToast(
+        language === 'EN'
+          ? `Programme "${activeDossier.name}" saved & overwritten in: ${res.path}`
+          : `Programme "${activeDossier.name}" enregistré et écrasé dans : ${res.path}`
+      );
+    } else {
+      showToast(
+        res.warning ||
+          (language === 'EN'
+            ? `Programme "${activeDossier.name}" exported (${filename} -> ${res.path})`
+            : `Programme "${activeDossier.name}" exporté (${filename} -> dossier : ${res.path})`)
+      );
+    }
+  };
+
+  // JSON Import
+  const handleImportJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = evt => {
+      try {
+        const parsed = safeJsonParse(evt.target?.result as string);
+        const importedDossiers: Dossier[] | null = Array.isArray(parsed?.dossiers)
+          ? parsed.dossiers
+          : parsed?.programmeSelectionne
+          ? [parsed.programmeSelectionne]
+          : null;
+
+        if (importedDossiers && importedDossiers.length > 0) {
+          if (importedDossiers.length === 1) {
+            const singleProg = importedDossiers[0];
+            setDossiers(prev => {
+              const exists = prev.some(d => d.id === singleProg.id);
+              return exists
+                ? prev.map(d => (d.id === singleProg.id ? singleProg : d))
+                : [...prev, singleProg];
+            });
+            setActiveDossierId(singleProg.id);
+          } else {
+            setDossiers(importedDossiers);
+            if (parsed.activeDossierId) {
+              setActiveDossierId(parsed.activeDossierId);
+            } else {
+              setActiveDossierId(importedDossiers[0].id);
+            }
+          }
+          if (parsed.userProfile) setUserProfile(parsed.userProfile);
+          if (parsed.currency) setCurrency(parsed.currency);
+          if (parsed.language) setLanguage(parsed.language);
+          if (parsed.customDocsData) {
+            setCustomDocsData({
+              ...defaultCustomDocsData,
+              ...parsed.customDocsData
+            });
+          }
+          setLastJsonFileName(file.name);
+          showToast(`Programme restauré depuis : ${file.name}`);
+        } else {
+          showToast('Fichier JSON non reconnu.');
+        }
+      } catch {
+        showToast('Erreur de lecture du fichier JSON.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  // Dossier / Axe / Project / Task mutations
+  const updateActiveDossier = (updater: (d: Dossier) => Dossier) => {
+    setDossiers(prev =>
+      prev.map(d => (d.id === activeDossier.id ? updater(d) : d))
+    );
+  };
+
+  // CSV Round-Trip Helpers (UTF-8 with BOM \uFEFF + semicolon separator for Excel + Anti-Formula Injection)
+  const escapeCsvCell = (val: unknown): string => {
+    return sanitizeCsvCellForExport(val);
+  };
+
+  const parseCsvText = (rawText: string): Array<Record<string, string>> => {
+    const cleanText = rawText.replace(/^\uFEFF/, '').trim();
+    if (!cleanText) return [];
+
+    const lines: string[] = [];
+    let currentLine = '';
+    let inQuotes = false;
+    for (let i = 0; i < cleanText.length; i++) {
+      const ch = cleanText[i];
+      if (ch === '"') {
+        if (inQuotes && cleanText[i + 1] === '"') {
+          currentLine += '""';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+          currentLine += ch;
+        }
+      } else if ((ch === '\n' || ch === '\r') && !inQuotes) {
+        if (ch === '\r' && cleanText[i + 1] === '\n') i++;
+        if (currentLine.trim().length > 0) lines.push(currentLine);
+        currentLine = '';
+      } else {
+        currentLine += ch;
+      }
+    }
+    if (currentLine.trim().length > 0) lines.push(currentLine);
+    if (lines.length < 2) return [];
+
+    const headerLine = lines[0];
+    const semiCount = (headerLine.match(/;/g) || []).length;
+    const commaCount = (headerLine.match(/,/g) || []).length;
+    const delimiter = semiCount >= commaCount ? ';' : ',';
+
+    const splitRow = (rowStr: string): string[] => {
+      const cells: string[] = [];
+      let cur = '';
+      let quoted = false;
+      for (let i = 0; i < rowStr.length; i++) {
+        const c = rowStr[i];
+        if (c === '"') {
+          if (quoted && rowStr[i + 1] === '"') {
+            cur += '"';
+            i++;
+          } else {
+            quoted = !quoted;
+          }
+        } else if (c === delimiter && !quoted) {
+          cells.push(cur.trim());
+          cur = '';
+        } else {
+          cur += c;
+        }
+      }
+      cells.push(cur.trim());
+      return cells;
+    };
+
+    const normalizeKey = (k: string) =>
+      k
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9_]/g, '');
+
+    const rawHeaders = splitRow(lines[0]).map(normalizeKey);
+    const records: Array<Record<string, string>> = [];
+
+    for (let r = 1; r < lines.length; r++) {
+      const vals = splitRow(lines[r]);
+      if (vals.every(v => !v)) continue;
+      const rec: Record<string, string> = {};
+      rawHeaders.forEach((h, idx) => {
+        if (h) rec[h] = sanitizeCsvValueOnImport(vals[idx] ?? '');
+      });
+      records.push(rec);
+    }
+    return records;
+  };
+
+  const triggerCsvDownload = (filename: string, csvLines: string[]) => {
+    const bom = '\uFEFF';
+    const content = bom + csvLines.join('\r\n');
+    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportPlanificationCSV = async () => {
+    const headers = [
+      'TaskID',
+      'Code',
+      'AxeID',
+      'Axe',
+      'ProjectID',
+      'Projet',
+      'Phase',
+      'Type',
+      'Activite',
+      'Antecedent',
+      'DateDebutPrevue',
+      'DateFinPrevue',
+      'Livrable',
+      'Bailleur',
+      'Budget',
+      'Statut',
+      'DateDebutReelle',
+      'DateFinReelle'
+    ];
+    const rows: string[] = [headers.join(';')];
+
+    (activeDossier.axes || []).forEach(axe => {
+      (axe.projects || []).forEach(proj => {
+        const rawTasks = proj.tasks || [];
+        const codeMap = new Map<string, string>();
+        STANDARD_PHASES.forEach((pName, pIdx) => {
+          rawTasks
+            .filter(tk => tk.phase === pName)
+            .forEach((tk, tIdx) => {
+              codeMap.set(
+                tk.id,
+                `${tk.type === 'jalon' ? 'J' : 'T'}.${pIdx + 1}.${tIdx + 1}`
+              );
+            });
+        });
+
+        rawTasks.forEach((tk, idx) => {
+          const code =
+            codeMap.get(tk.id) ||
+            `${tk.type === 'jalon' ? 'J' : 'T'}.1.${idx + 1}`;
+          rows.push(
+            [
+              tk.id,
+              code,
+              axe.id,
+              axe.name,
+              proj.id,
+              proj.name,
+              tk.phase || 'PLANIFICATION',
+              tk.type || 'tache',
+              tk.name || '',
+              tk.antecedent || '—',
+              tk.startDate || todayISO,
+              tk.endDate || todayISO,
+              tk.livrable || '',
+              tk.bailleur || tk.autorite || '',
+              Number(tk.budget) || 0,
+              tk.status || 'À faire',
+              tk.actualStartDate || '',
+              tk.actualEndDate || ''
+            ]
+              .map(escapeCsvCell)
+              .join(';')
+          );
+        });
+      });
+    });
+
+    const safeSlug = (activeDossier.name || 'programme')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .slice(0, 30);
+    const filename = `FAAB_PLAN_Planification_${safeSlug}.csv`;
+    const bom = '\uFEFF';
+    const csvContent = bom + rows.join('\r\n');
+
+    const res = await saveProgramFile({
+      programName: activeDossier.name,
+      fileName: filename,
+      content: csvContent,
+      mimeType: 'text/csv;charset=utf-8;'
+    });
+
+    setCsvMenuOpen(null);
+    if (res.mode === 'directory' || res.mode === 'savepicker') {
+      showToast(
+        language === 'EN'
+          ? `Planning CSV saved & overwritten in: ${res.path}`
+          : `Planification CSV enregistrée et écrasée dans : ${res.path}`
+      );
+    } else {
+      showToast(
+        res.warning ||
+          (language === 'EN'
+            ? `Planning CSV exported: ${filename} (target: ${res.path})`
+            : `Planification exportée en CSV : ${filename} (dossier : ${res.path})`)
+      );
+    }
+  };
+
+  const handleExportRaciCSV = async () => {
+    const headers = [
+      'TaskID',
+      'Code',
+      'AxeID',
+      'Axe',
+      'ProjectID',
+      'Projet',
+      'Phase',
+      'Activite',
+      'R_Responsable',
+      'A_Autorite',
+      'C_Consulte',
+      'I_Informe',
+      'Livrable',
+      'Statut'
+    ];
+    const rows: string[] = [headers.join(';')];
+
+    (activeDossier.axes || []).forEach(axe => {
+      (axe.projects || []).forEach(proj => {
+        const rawTasks = proj.tasks || [];
+        const codeMap = new Map<string, string>();
+        STANDARD_PHASES.forEach((pName, pIdx) => {
+          rawTasks
+            .filter(tk => tk.phase === pName)
+            .forEach((tk, tIdx) => {
+              codeMap.set(
+                tk.id,
+                `${tk.type === 'jalon' ? 'J' : 'T'}.${pIdx + 1}.${tIdx + 1}`
+              );
+            });
+        });
+
+        rawTasks.forEach((tk, idx) => {
+          const code =
+            codeMap.get(tk.id) ||
+            `${tk.type === 'jalon' ? 'J' : 'T'}.1.${idx + 1}`;
+          rows.push(
+            [
+              tk.id,
+              code,
+              axe.id,
+              axe.name,
+              proj.id,
+              proj.name,
+              tk.phase || 'PLANIFICATION',
+              tk.name || '',
+              tk.assignee || tk.raciR || tk.responsabilite || '',
+              tk.autorite || tk.raciA || '',
+              tk.consulte || tk.raciC || '',
+              tk.informe || tk.raciI || '',
+              tk.livrable || '',
+              tk.status || 'À faire'
+            ]
+              .map(escapeCsvCell)
+              .join(';')
+          );
+        });
+      });
+    });
+
+    const safeSlug = (activeDossier.name || 'programme')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .slice(0, 30);
+    const filename = `FAAB_PLAN_Matrice_RACI_${safeSlug}.csv`;
+    const bom = '\uFEFF';
+    const csvContent = bom + rows.join('\r\n');
+
+    const res = await saveProgramFile({
+      programName: activeDossier.name,
+      fileName: filename,
+      content: csvContent,
+      mimeType: 'text/csv;charset=utf-8;'
+    });
+
+    setCsvMenuOpen(null);
+    if (res.mode === 'directory' || res.mode === 'savepicker') {
+      showToast(
+        language === 'EN'
+          ? `RACI Matrix CSV saved & overwritten in: ${res.path}`
+          : `Matrice RACI CSV enregistrée et écrasée dans : ${res.path}`
+      );
+    } else {
+      showToast(
+        res.warning ||
+          (language === 'EN'
+            ? `RACI Matrix exported: ${filename} (target: ${res.path})`
+            : `Matrice RACI exportée en CSV : ${filename} (dossier : ${res.path})`)
+      );
+    }
+  };
+
+  const handleImportPlanificationCSV = (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = evt => {
+      try {
+        const records = parseCsvText(String(evt.target?.result || ''));
+        if (records.length === 0) {
+          showToast('Fichier CSV vide ou format non valide.');
+          return;
+        }
+
+        let updatedCount = 0;
+        let createdCount = 0;
+
+        updateActiveDossier(d => {
+          const nextAxes: Axe[] = (d.axes || []).map(a => ({
+            ...a,
+            projects: (a.projects || []).map(p => ({
+              ...p,
+              tasks: [...(p.tasks || [])]
+            }))
+          }));
+
+          records.forEach((rec, idx) => {
+            const taskId = rec.taskid || rec.id || '';
+            const axeId = rec.axeid || '';
+            const axeName = rec.axe || '';
+            const projId = rec.projectid || rec.projetid || '';
+            const projName = rec.projet || rec.project || '';
+            const actName =
+              rec.activite || rec.tache || rec.name || rec.intitule || '';
+            if (!actName && !taskId) return;
+
+            const rawPhase = (rec.phase || '').toUpperCase().trim();
+            const validPhase = STANDARD_PHASES.includes(rawPhase as any)
+              ? rawPhase
+              : STANDARD_PHASES.find(p =>
+                  rawPhase.includes(p.slice(0, 6))
+                ) || 'PLANIFICATION';
+
+            const rawType = (rec.type || '').toLowerCase().trim();
+            const validType: 'tache' | 'jalon' =
+              rawType === 'jalon' || rawType === 'j' ? 'jalon' : 'tache';
+
+            const rawStatus = (rec.statut || rec.status || '').trim();
+            const validStatus: Task['status'] =
+              rawStatus === 'Terminé' ||
+              rawStatus === 'En cours' ||
+              rawStatus === 'Bloqué' ||
+              rawStatus === 'À faire'
+                ? rawStatus
+                : 'À faire';
+
+            const cleanBudget =
+              Number(
+                String(rec.budget || '0')
+                  .replace(/\s/g, '')
+                  .replace(',', '.')
+                  .replace(/[^0-9.-]/g, '')
+              ) || 0;
+
+            // 1. Try finding existing task by ID or by Project+Name
+            let matchedTask: Task | undefined;
+            for (const ax of nextAxes) {
+              for (const pr of ax.projects || []) {
+                const found = (pr.tasks || []).find(
+                  tk =>
+                    (taskId && tk.id === taskId) ||
+                    (!taskId &&
+                      actName &&
+                      tk.name.trim().toLowerCase() ===
+                        actName.trim().toLowerCase() &&
+                      (!projName ||
+                        pr.name.trim().toLowerCase() ===
+                          projName.trim().toLowerCase()))
+                );
+                if (found) {
+                  matchedTask = found;
+                  break;
+                }
+              }
+              if (matchedTask) break;
+            }
+
+            if (matchedTask) {
+              if (actName) matchedTask.name = actName;
+              if (rec.phase) matchedTask.phase = validPhase;
+              if (rec.type) matchedTask.type = validType;
+              if (rec.antecedent !== undefined && rec.antecedent !== '') {
+                matchedTask.antecedent = rec.antecedent;
+              }
+              if (rec.datedebutprevue || rec.startdate) {
+                matchedTask.startDate = rec.datedebutprevue || rec.startdate;
+              }
+              if (rec.datefinprevue || rec.enddate) {
+                matchedTask.endDate = rec.datefinprevue || rec.enddate;
+              }
+              if (rec.budget !== undefined && rec.budget !== '') {
+                matchedTask.budget = cleanBudget;
+              }
+              if (rec.statut || rec.status) {
+                matchedTask.status = validStatus;
+              }
+              if (rec.datedebutreelle !== undefined) {
+                matchedTask.actualStartDate = rec.datedebutreelle;
+              }
+              if (rec.datefinreelle !== undefined) {
+                matchedTask.actualEndDate = rec.datefinreelle;
+              }
+              if (rec.livrable !== undefined) {
+                matchedTask.livrable = rec.livrable;
+              }
+              if (rec.bailleur !== undefined) {
+                matchedTask.bailleur = rec.bailleur;
+              }
+              updatedCount++;
+            } else {
+              // Find or create target Axe & Project
+              let targetAxe =
+                nextAxes.find(
+                  a =>
+                    (axeId && a.id === axeId) ||
+                    (axeName &&
+                      a.name.trim().toLowerCase() ===
+                        axeName.trim().toLowerCase())
+                ) || nextAxes[0];
+
+              if (!targetAxe) {
+                targetAxe = {
+                  id: axeId || `axe-csv-${Date.now()}`,
+                  name: axeName || 'Axe 1 : Axe Importé CSV',
+                  projects: []
+                };
+                nextAxes.push(targetAxe);
+              }
+
+              let targetProj =
+                (targetAxe.projects || []).find(
+                  p =>
+                    (projId && p.id === projId) ||
+                    (projName &&
+                      p.name.trim().toLowerCase() ===
+                        projName.trim().toLowerCase())
+                ) || (targetAxe.projects || [])[0];
+
+              if (!targetProj) {
+                targetProj = {
+                  id: projId || `proj-csv-${Date.now()}-${idx}`,
+                  name: projName || 'Projet Importé CSV',
+                  tasks: []
+                };
+                targetAxe.projects = [...(targetAxe.projects || []), targetProj];
+              }
+
+              const newTk: Task = {
+                id: taskId || `tk-csv-${Date.now()}-${idx}`,
+                type: validType,
+                phase: validPhase,
+                name: actName || `Activité CSV ${idx + 1}`,
+                startDate: rec.datedebutprevue || rec.startdate || todayISO,
+                endDate: rec.datefinprevue || rec.enddate || todayISO,
+                actualStartDate: rec.datedebutreelle || '',
+                actualEndDate: rec.datefinreelle || '',
+                status: validStatus,
+                assignee: rec.r_responsable || rec.responsable || '',
+                autorite: rec.a_autorite || rec.autorite || '',
+                bailleur: rec.bailleur || rec.a_autorite || rec.autorite || '',
+                consulte: rec.c_consulte || rec.consulte || '',
+                informe: rec.i_informe || rec.informe || '',
+                livrable: rec.livrable || '',
+                budget: cleanBudget,
+                antecedent: rec.antecedent || '—'
+              };
+              targetProj.tasks = [...(targetProj.tasks || []), newTk];
+              createdCount++;
+            }
+          });
+
+          const nextDossier: Dossier = { ...d, axes: nextAxes };
+          return {
+            ...nextDossier,
+            categorizedActors: ensureDossierCategorizedActors(nextDossier)
+          };
+        });
+
+        showToast(
+          `CSV Planification importé (${updatedCount} mis à jour, ${createdCount} ajouté(s)).`
+        );
+      } catch {
+        showToast("Erreur lors de l'importation du CSV Planification.");
+      }
+    };
+    reader.readAsText(file, 'UTF-8');
+    e.target.value = '';
+    setCsvMenuOpen(null);
+  };
+
+  const handleImportRaciCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = evt => {
+      try {
+        const records = parseCsvText(String(evt.target?.result || ''));
+        if (records.length === 0) {
+          showToast('Fichier CSV RACI vide ou format non valide.');
+          return;
+        }
+
+        let updatedCount = 0;
+        let createdCount = 0;
+
+        updateActiveDossier(d => {
+          const nextAxes: Axe[] = (d.axes || []).map(a => ({
+            ...a,
+            projects: (a.projects || []).map(p => ({
+              ...p,
+              tasks: [...(p.tasks || [])]
+            }))
+          }));
+
+          records.forEach((rec, idx) => {
+            const taskId = rec.taskid || rec.id || '';
+            const axeId = rec.axeid || '';
+            const axeName = rec.axe || '';
+            const projId = rec.projectid || rec.projetid || '';
+            const projName = rec.projet || rec.project || '';
+            const actName =
+              rec.activite || rec.tache || rec.name || rec.intitule || '';
+            if (!actName && !taskId) return;
+
+            const rVal =
+              rec.r_responsable ??
+              rec.rresponsable ??
+              rec.responsable ??
+              rec.r ??
+              undefined;
+            const aVal =
+              rec.a_autorite ??
+              rec.aautorite ??
+              rec.autorite ??
+              rec.a ??
+              undefined;
+            const cVal =
+              rec.c_consulte ??
+              rec.cconsulte ??
+              rec.consulte ??
+              rec.c ??
+              undefined;
+            const iVal =
+              rec.i_informe ??
+              rec.iinforme ??
+              rec.informe ??
+              rec.i ??
+              undefined;
+
+            let matchedTask: Task | undefined;
+            for (const ax of nextAxes) {
+              for (const pr of ax.projects || []) {
+                const found = (pr.tasks || []).find(
+                  tk =>
+                    (taskId && tk.id === taskId) ||
+                    (!taskId &&
+                      actName &&
+                      tk.name.trim().toLowerCase() ===
+                        actName.trim().toLowerCase() &&
+                      (!projName ||
+                        pr.name.trim().toLowerCase() ===
+                          projName.trim().toLowerCase()))
+                );
+                if (found) {
+                  matchedTask = found;
+                  break;
+                }
+              }
+              if (matchedTask) break;
+            }
+
+            if (matchedTask) {
+              if (actName) matchedTask.name = actName;
+              if (rVal !== undefined) {
+                matchedTask.assignee = rVal;
+                matchedTask.raciR = rVal;
+                matchedTask.responsabilite = rVal;
+              }
+              if (aVal !== undefined) {
+                matchedTask.autorite = aVal;
+                matchedTask.raciA = aVal;
+              }
+              if (cVal !== undefined) {
+                matchedTask.consulte = cVal;
+                matchedTask.raciC = cVal;
+              }
+              if (iVal !== undefined) {
+                matchedTask.informe = iVal;
+                matchedTask.raciI = iVal;
+              }
+              if (rec.livrable !== undefined) {
+                matchedTask.livrable = rec.livrable;
+              }
+              if (rec.statut || rec.status) {
+                const st = (rec.statut || rec.status).trim();
+                if (
+                  st === 'Terminé' ||
+                  st === 'En cours' ||
+                  st === 'Bloqué' ||
+                  st === 'À faire'
+                ) {
+                  matchedTask.status = st;
+                }
+              }
+              updatedCount++;
+            } else {
+              let targetAxe =
+                nextAxes.find(
+                  a =>
+                    (axeId && a.id === axeId) ||
+                    (axeName &&
+                      a.name.trim().toLowerCase() ===
+                        axeName.trim().toLowerCase())
+                ) || nextAxes[0];
+
+              if (!targetAxe) {
+                targetAxe = {
+                  id: axeId || `axe-raci-${Date.now()}`,
+                  name: axeName || 'Axe 1 : Axe Importé RACI',
+                  projects: []
+                };
+                nextAxes.push(targetAxe);
+              }
+
+              let targetProj =
+                (targetAxe.projects || []).find(
+                  p =>
+                    (projId && p.id === projId) ||
+                    (projName &&
+                      p.name.trim().toLowerCase() ===
+                        projName.trim().toLowerCase())
+                ) || (targetAxe.projects || [])[0];
+
+              if (!targetProj) {
+                targetProj = {
+                  id: projId || `proj-raci-${Date.now()}-${idx}`,
+                  name: projName || 'Projet Importé RACI',
+                  tasks: []
+                };
+                targetAxe.projects = [...(targetAxe.projects || []), targetProj];
+              }
+
+              const rawPhase = (rec.phase || '').toUpperCase().trim();
+              const validPhase = STANDARD_PHASES.includes(rawPhase as any)
+                ? rawPhase
+                : 'PLANIFICATION';
+
+              const newTk: Task = {
+                id: taskId || `tk-raci-${Date.now()}-${idx}`,
+                type: 'tache',
+                phase: validPhase,
+                name: actName || `Activité RACI ${idx + 1}`,
+                startDate: todayISO,
+                endDate: todayISO,
+                status: 'À faire',
+                assignee: rVal || '',
+                raciR: rVal || '',
+                responsabilite: rVal || '',
+                autorite: aVal || '',
+                raciA: aVal || '',
+                consulte: cVal || '',
+                raciC: cVal || '',
+                informe: iVal || '',
+                raciI: iVal || '',
+                livrable: rec.livrable || '',
+                budget: 0,
+                antecedent: '—'
+              };
+              targetProj.tasks = [...(targetProj.tasks || []), newTk];
+              createdCount++;
+            }
+          });
+
+          const nextDossier: Dossier = { ...d, axes: nextAxes };
+          return {
+            ...nextDossier,
+            categorizedActors: ensureDossierCategorizedActors(nextDossier)
+          };
+        });
+
+        showToast(
+          `CSV Matrice RACI importé (${updatedCount} mis à jour, ${createdCount} ajouté(s)).`
+        );
+      } catch {
+        showToast("Erreur lors de l'importation du CSV RACI.");
+      }
+    };
+    reader.readAsText(file, 'UTF-8');
+    e.target.value = '';
+    setCsvMenuOpen(null);
+  };
+
+  const createDossierDirect = (
+    name: string,
+    desc: string,
+    horizon: string = '2026-2030'
+  ) => {
+    const newId = `dossier-${Date.now()}`;
+    const newDossier: Dossier = {
+      id: newId,
+      name,
+      horizonPlan: horizon,
+      psdYear: new Date().getFullYear(),
+      horizonYears: 5,
+      type: 'Portefeuille Stratégique',
+      institution: userProfile.institution || 'Organisation',
+      description:
+        desc || 'Portefeuille de projets planifié et suivi dans FAAB PLAN.',
+      axes: [
+        {
+          id: `axe-${Date.now()}`,
+          name: 'Axe 1 : Orientation Stratégique Principale',
+          projects: [
+            {
+              id: `proj-${Date.now()}`,
+              name: 'Projet 1.1 : Projet Opérationnel Pilote',
+              tasks: [
+                {
+                  id: `task-${Date.now()}`,
+                  type: 'tache',
+                  phase: 'AVANT PROJET',
+                  name: 'Cadrage initial et lancement opérationnel',
+                  startDate: todayISO,
+                  endDate: todayISO,
+                  status: 'En cours',
+                  assignee: userProfile.fullName || 'Chef de Projet',
+                  autorite: 'Comité de Pilotage (COPIL)',
+                  consulte: 'Experts Techniques',
+                  informe: 'Parties Prenantes',
+                  budget: 5000000,
+                  antecedent: '—'
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    };
+
+    setDossiers(prev => [...prev, newDossier]);
+    setActiveDossierId(newId);
+    setFilterAxeId('ALL');
+    setFilterProjectId('ALL');
+    showToast(`Nouveau dossier "${newDossier.name}" créé et activé.`);
+  };
+
+  const handleUpdateDossier = (
+    id: string,
+    patch: Partial<Pick<Dossier, 'name' | 'description' | 'horizonPlan'>>
+  ) => {
+    setDossiers(prev =>
+      prev.map(d => (d.id === id ? { ...d, ...patch } : d))
+    );
+    showToast('Programme mis à jour.');
+  };
+
+  const handleDeleteDossier = (id: string) => {
+    if (dossiers.length <= 1) {
+      showToast('Impossible de supprimer le dernier dossier.');
+      return;
+    }
+    const remaining = dossiers.filter(d => d.id !== id);
+    setDossiers(remaining);
+    if (activeDossierId === id) {
+      setActiveDossierId(remaining[0].id);
+    }
+    showToast('Dossier supprimé.');
+  };
+
+  const handleAddAxe = () => {
+    const nextNum = (activeDossier.axes || []).length + 1;
+    const newAxe: Axe = {
+      id: `axe-${Date.now()}`,
+      name: `Axe ${nextNum} : Nouvel Axe Stratégique`,
+      projects: [
+        {
+          id: `proj-${Date.now()}`,
+          name: `Projet ${nextNum}.1 : Nouveau Projet Opérationnel`,
+          tasks: []
+        }
+      ]
+    };
+    updateActiveDossier(d => ({
+      ...d,
+      axes: [...(d.axes || []), newAxe]
+    }));
+    showToast(`Nouvel Axe ${nextNum} ajouté.`);
+  };
+
+  const handleUpdateAxeName = (axeId: string, name: string) => {
+    updateActiveDossier(d => ({
+      ...d,
+      axes: (d.axes || []).map(a => (a.id === axeId ? { ...a, name } : a))
+    }));
+  };
+
+  const handleDeleteAxe = (axeId: string) => {
+    if ((activeDossier.axes || []).length <= 1) {
+      showToast('Le dossier doit conserver au moins un Axe Stratégique.');
+      return;
+    }
+    updateActiveDossier(d => ({
+      ...d,
+      axes: (d.axes || []).filter(a => a.id !== axeId)
+    }));
+    if (filterAxeId === axeId) setFilterAxeId('ALL');
+    showToast('Axe supprimé.');
+  };
+
+  const handleAddProject = (targetAxeId?: string) => {
+    const targetAxe = targetAxeId
+      ? (activeDossier.axes || []).find(a => a.id === targetAxeId)
+      : filterAxeId !== 'ALL'
+      ? (activeDossier.axes || []).find(a => a.id === filterAxeId)
+      : (activeDossier.axes || [])[0];
+    if (!targetAxe) {
+      handleAddAxe();
+      return;
+    }
+    const nextNum = (targetAxe.projects || []).length + 1;
+    const newProj: Project = {
+      id: `proj-${Date.now()}`,
+      name: `Projet ${nextNum} : Nouveau Projet Opérationnel`,
+      tasks: []
+    };
+    updateActiveDossier(d => ({
+      ...d,
+      axes: (d.axes || []).map(a =>
+        a.id === targetAxe.id
+          ? { ...a, projects: [...(a.projects || []), newProj] }
+          : a
+      )
+    }));
+    showToast(`Projet ajouté dans ${targetAxe.name}.`);
+  };
+
+  const handleUpdateProjectName = (projectId: string, name: string) => {
+    updateActiveDossier(d => ({
+      ...d,
+      axes: (d.axes || []).map(a => ({
+        ...a,
+        projects: (a.projects || []).map(p =>
+          p.id === projectId ? { ...p, name } : p
+        )
+      }))
+    }));
+  };
+
+  const handleDeleteProject = (projectId: string) => {
+    updateActiveDossier(d => ({
+      ...d,
+      axes: (d.axes || []).map(a => ({
+        ...a,
+        projects: (a.projects || []).filter(p => p.id !== projectId)
+      }))
+    }));
+    if (filterProjectId === projectId) setFilterProjectId('ALL');
+    showToast('Projet supprimé.');
+  };
+
+  const handleAddTaskInPhase = (
+    projectId: string,
+    phaseName: string,
+    type: 'tache' | 'jalon' = 'tache'
+  ) => {
+    const newTask: Task = {
+      id: `tk-${Date.now()}`,
+      type,
+      phase: phaseName,
+      name:
+        type === 'jalon'
+          ? `Nouveau Jalon (${phaseName})`
+          : `Nouvelle Activité (${phaseName})`,
+      startDate: todayISO,
+      endDate: todayISO,
+      actualStartDate: '',
+      actualEndDate: '',
+      status: 'À faire',
+      assignee:
+        userProfile.intervenesAsProgramActor !== false
+          ? userProfile.fullName || ''
+          : '',
+      autorite: '',
+      consulte: '',
+      informe: '',
+      livrable: '',
+      budget: type === 'jalon' ? 0 : 2500000,
+      antecedent: '—'
+    };
+
+    updateActiveDossier(d => ({
+      ...d,
+      axes: (d.axes || []).map(a => ({
+        ...a,
+        projects: (a.projects || []).map(p =>
+          p.id === projectId
+            ? { ...p, tasks: [...(p.tasks || []), newTask] }
+            : p
+        )
+      }))
+    }));
+    showToast(
+      `${type === 'jalon' ? 'Jalon' : 'Activité'} ajouté(e) dans la phase « ${phaseName} ».`
+    );
+  };
+
+  const handleAddTask = (type: 'tache' | 'jalon' = 'tache') => {
+    const targetProj =
+      filterProjectId !== 'ALL'
+        ? availableProjectsInFilter.find(p => p.id === filterProjectId)
+        : availableProjectsInFilter[0];
+    if (!targetProj) {
+      showToast("Veuillez d'abord créer un Projet.");
+      return;
+    }
+    handleAddTaskInPhase(targetProj.id, 'PLANIFICATION', type);
+  };
+
+  const handleUpdateTask = (
+    projectId: string,
+    taskId: string,
+    patch: Partial<Task>
+  ) => {
+    updateActiveDossier(d => ({
+      ...d,
+      axes: (d.axes || []).map(a => ({
+        ...a,
+        projects: (a.projects || []).map(p =>
+          p.id === projectId
+            ? {
+                ...p,
+                tasks: (p.tasks || []).map(tk =>
+                  tk.id === taskId ? { ...tk, ...patch } : tk
+                )
+              }
+            : p
+        )
+      }))
+    }));
   };
 
   const handleDeleteTask = (projectId: string, taskId: string) => {
-    const newData = [...data];
-    for (const d of newData) {
-      if (d.axes) {
-        for (const a of d.axes) {
-          if (a.projects) {
-            const p = a.projects.find(proj => proj.id === projectId);
-            if (p && p.tasks) {
-              p.tasks = p.tasks.filter(t => t.id !== taskId);
-            }
+    updateActiveDossier(d => ({
+      ...d,
+      axes: (d.axes || []).map(a => ({
+        ...a,
+        projects: (a.projects || []).map(p =>
+          p.id === projectId
+            ? {
+                ...p,
+                tasks: (p.tasks || []).filter(tk => tk.id !== taskId)
+              }
+            : p
+        )
+      }))
+    }));
+  };
+
+  const handleMoveTaskInKanban = (
+    projectId: string,
+    taskId: string,
+    newStatus: Task['status']
+  ) => {
+    updateActiveDossier(d => ({
+      ...d,
+      axes: (d.axes || []).map(a => ({
+        ...a,
+        projects: (a.projects || []).map(p => {
+          if (p.id !== projectId) return p;
+          const updatedTasks = recalculateProjectTasksOnKanbanMove(
+            p.tasks || [],
+            taskId,
+            newStatus,
+            todayISO
+          );
+          return { ...p, tasks: updatedTasks };
+        })
+      }))
+    }));
+    showToast(
+      `Statut changé vers "${newStatus}" (dates prévues recalculées automatiquement).`
+    );
+  };
+
+  // Document generator field handlers — scoped per selected programme (activeDossier)
+  const activeProgramCustomDocsData: CustomDocsMap = {
+    ...defaultCustomDocsData,
+    ...(activeDossier.customDocsData || {})
+  };
+
+  const handleUpdateDocField = (
+    docType: InstitutionalDocType,
+    fieldKey: keyof CustomDocFields,
+    value: string
+  ) => {
+    const isSharedImageKey =
+      fieldKey === 'leftLogoDataUrl' ||
+      fieldKey === 'rightLogoDataUrl' ||
+      fieldKey === 'bannerImageDataUrl' ||
+      fieldKey === 'figureImageDataUrl' ||
+      fieldKey === 'orgStampDataUrl' ||
+      fieldKey === 'partnerStampDataUrl';
+
+    updateActiveDossier(d => {
+      const prev = {
+        ...defaultCustomDocsData,
+        ...(d.customDocsData || {})
+      };
+      if (isSharedImageKey && value === '') {
+        const cleaned = { ...prev };
+        (Object.keys(cleaned) as InstitutionalDocType[]).forEach(k => {
+          if (cleaned[k]) {
+            cleaned[k] = { ...cleaned[k], [fieldKey]: '' };
+          }
+        });
+        return { ...d, customDocsData: cleaned };
+      }
+      return {
+        ...d,
+        customDocsData: {
+          ...prev,
+          [docType]: {
+            ...(prev[docType] || defaultCustomDocsData[docType]),
+            [fieldKey]: value
           }
         }
-      }
-    }
-    setData(newData);
-  };
-
-  const ptbaAvailableProjects = useMemo(() => {
-    const projs: Project[] = [];
-    data.forEach(d => {
-      if (filterPTBADossier === 'FULL' || d.id === filterPTBADossier) {
-        d.axes?.forEach(a => {
-          if (filterPTBAAxe === 'FULL' || a.id === filterPTBAAxe) {
-            a.projects?.forEach(p => projs.push(p));
-          }
-        });
-      }
+      };
     });
-    return projs;
-  }, [data, filterPTBADossier, filterPTBAAxe]);
-
-  const allProjects = useMemo(() => {
-    const projects: Project[] = [];
-    data.forEach(dossier => {
-      if (Array.isArray(dossier.axes)) {
-        dossier.axes.forEach(axe => {
-          if (Array.isArray(axe.projects)) {
-            axe.projects.forEach(proj => {
-              projects.push({ 
-                ...proj, 
-                dossierName: dossier.name, 
-                dossierId: dossier.id,
-                axeName: axe.name, 
-                axeId: axe.id, 
-                isReadOnly: dossier.isReadOnly 
-              });
-            });
-          }
-        });
-      }
-    });
-    return projects;
-  }, [data]);
-
-  const allTasks = useMemo(() => {
-    const tasks: (Task & { projectName: string; projectId: string; axeId?: string })[] = [];
-    allProjects.forEach(proj => {
-      if (Array.isArray(proj.tasks)) {
-        proj.tasks.forEach(task => tasks.push({ 
-          ...task, 
-          projectName: proj.name,
-          projectId: proj.id,
-          axeId: proj.axeId
-        }));
-      }
-    });
-    return tasks;
-  }, [allProjects]);
-
-  const addDossier = () => {
-    const currentYear = new Date().getFullYear();
-    const newDossier: Dossier = { 
-      id: `dossier-${Date.now()}`, 
-      name: 'Nouveau Programme Stratégique', 
-      institution: '', 
-      isReadOnly: false, 
-      startYear: currentYear.toString(), 
-      endYear: (currentYear + 2).toString(), 
-      axes: [] 
-    };
-    setData([newDossier, ...data]);
-    setFilterProcessusDossier(newDossier.id);
-    setFilterPTBADossier(newDossier.id);
-    setFilterDashDossier(newDossier.id);
   };
 
-  const updateDossierYear = (dossierId: string, year: string) => {
-    const newData = [...data];
-    const dossier = newData.find(d => d.id === dossierId);
-    if(dossier) dossier.startYear = year;
-    setData(newData);
-  };
-
-  const updateDossierEndYear = (dossierId: string, year: string) => {
-    const newData = [...data];
-    const dossier = newData.find(d => d.id === dossierId);
-    if(dossier) dossier.endYear = year;
-    setData(newData);
-  };
-
-  const updateDossierInstitution = (dossierId: string, institution: string) => {
-    const newData = [...data];
-    const dossier = newData.find(d => d.id === dossierId);
-    if(dossier) dossier.institution = institution;
-    setData(newData);
-  };
-
-  const addAxe = (dossierId: string) => {
-    const newData = [...data];
-    const dossier = newData.find(d => d.id === dossierId);
-    if(dossier) {
-      dossier.axes.push({ id: `axe-${Date.now()}`, name: 'Nouvelle Composante', budget: 0, projects: [] });
-      setData(newData);
-    }
-  };
-
-  const addProject = (dossierId: string, axeId: string) => {
-    const newData = [...data];
-    const axe = newData.find(d => d.id === dossierId)?.axes.find(a => a.id === axeId);
-    if(axe) {
-      axe.projects.push({ id: `proj-${Date.now()}`, name: 'Nouveau Projet', budgetsAnnuels: { '2025': '', '2026': '', '2027': '' }, tasks: [] });
-      setData(newData);
-    }
-  };
-
-  const updateDossierItemName = (dossierId: string, axeId: string | null, projId: string | null, newName: string) => {
-    const newData = [...data];
-    if (projId && axeId) {
-      const proj = newData.find(d => d.id === dossierId)?.axes.find(a => a.id === axeId)?.projects.find(p => p.id === projId);
-      if(proj) proj.name = newName;
-    } else if (axeId) {
-      const axe = newData.find(d => d.id === dossierId)?.axes.find(a => a.id === axeId);
-      if(axe) axe.name = newName;
-    } else {
-      const dossier = newData.find(d => d.id === dossierId);
-      if(dossier) dossier.name = newName;
-    }
-    setData(newData);
-  };
-
-  const deleteDossier = (dossierId: string) => {
-    if (window.confirm("Êtes-vous sûr de vouloir supprimer ce programme ?")) {
-      setData(data.filter(d => d.id !== dossierId));
-    }
-  };
-
-  const deleteAxe = (dossierId: string, axeId: string) => {
-    const newData = [...data];
-    const dossier = newData.find(d => d.id === dossierId);
-    if(dossier) {
-      dossier.axes = dossier.axes.filter(a => a.id !== axeId);
-      setData(newData);
-    }
-  };
-
-  const deleteProject = (dossierId: string, axeId: string, projId: string) => {
-    const newData = [...data];
-    const axe = newData.find(d => d.id === dossierId)?.axes.find(a => a.id === axeId);
-    if(axe) {
-      axe.projects = axe.projects.filter(p => p.id !== projId);
-      setData(newData);
-    }
-  };
-
-  const getQuarterOverlapDays = (startDateStr?: string, endDateStr?: string, targetYear?: string, qIndex?: number): number => {
-    if (!startDateStr || !endDateStr || !targetYear || qIndex === undefined) return 0;
-    const [sYear, sMonth, sDay] = startDateStr.split('-').map(Number);
-    const [eYear, eMonth, eDay] = endDateStr.split('-').map(Number);
-    const start = new Date(sYear, sMonth - 1, sDay).getTime();
-    const end = new Date(eYear, eMonth - 1, eDay).getTime();
-
-    const qStart = new Date(parseInt(targetYear), qIndex * 3, 1).getTime();
-    const qEnd = new Date(parseInt(targetYear), qIndex * 3 + 3, 0).getTime();
-
-    if (start > qEnd || end < qStart) return 0;
-    const overlapStart = Math.max(start, qStart);
-    const overlapEnd = Math.min(end, qEnd);
-    return Math.max(0, (overlapEnd - overlapStart) / (1000 * 60 * 60 * 24) + 1);
-  };
-
-  const getYearOverlapDays = (startDateStr?: string, endDateStr?: string, targetYear?: string): number => {
-    if (!startDateStr || !endDateStr || !targetYear) return 0;
-    const [sYear, sMonth, sDay] = startDateStr.split('-').map(Number);
-    const [eYear, eMonth, eDay] = endDateStr.split('-').map(Number);
-    const start = new Date(sYear, sMonth - 1, sDay).getTime();
-    const end = new Date(eYear, eMonth - 1, eDay).getTime();
-
-    if (targetYear === 'ALL') {
-       return Math.max(0, (end - start) / (1000 * 60 * 60 * 24) + 1);
-    }
-
-    const yStart = new Date(parseInt(targetYear), 0, 1).getTime();
-    const yEnd = new Date(parseInt(targetYear), 11, 31).getTime();
-
-    if (start > yEnd || end < yStart) return 0;
-    const overlapStart = Math.max(start, yStart);
-    const overlapEnd = Math.min(end, yEnd);
-    return Math.max(0, (overlapEnd - overlapStart) / (1000 * 60 * 60 * 24) + 1);
-  };
-
-  const getProjectAnnualBudget = (proj: Project, year: string, isReadOnly?: boolean): number => {
-    if (isReadOnly) {
-      if (year === 'ALL') return getProjectTotalBudget(proj, true);
-      return Number(proj.budgetsAnnuels?.[year]) || 0;
-    }
-    let total = 0;
-    if (proj.tasks) {
-      proj.tasks.forEach(t => {
-        const vp = Number(t.coutPlanifie) || 0;
-        if (vp > 0 && t.startDate && t.endDate) {
-          const dYear = getYearOverlapDays(t.startDate, t.endDate, year);
-          const [sYear, sMonth, sDay] = t.startDate.split('-').map(Number);
-          const [eYear, eMonth, eDay] = t.endDate.split('-').map(Number);
-          const start = new Date(sYear, sMonth - 1, sDay).getTime();
-          const end = new Date(eYear, eMonth - 1, eDay).getTime();
-          const totalDays = Math.max(1, (end - start) / (1000 * 60 * 60 * 24) + 1);
-          total += vp * (dYear / totalDays);
+  const handleResetDocDefaults = (docType: InstitutionalDocType) => {
+    updateActiveDossier(d => {
+      const prev = {
+        ...defaultCustomDocsData,
+        ...(d.customDocsData || {})
+      };
+      const existing = prev[docType];
+      const cleanedDocsData = { ...prev };
+      (Object.keys(cleanedDocsData) as InstitutionalDocType[]).forEach(k => {
+        if (cleanedDocsData[k]) {
+          cleanedDocsData[k] = {
+            ...cleanedDocsData[k],
+            matricesJson: ''
+          };
         }
       });
-    }
-    return Math.round(total);
+      return {
+        ...d,
+        customDocsData: {
+          ...cleanedDocsData,
+          [docType]: {
+            ...defaultCustomDocsData[docType],
+            leftLogoDataUrl: existing?.leftLogoDataUrl,
+            rightLogoDataUrl: existing?.rightLogoDataUrl,
+            bannerImageDataUrl: existing?.bannerImageDataUrl,
+            figureImageDataUrl: existing?.figureImageDataUrl,
+            orgStampDataUrl: existing?.orgStampDataUrl,
+            partnerStampDataUrl: existing?.partnerStampDataUrl,
+            matricesJson: '',
+            slidesConfigJson: '',
+            excludedFieldsJson: ''
+          }
+        }
+      };
+    });
+    showToast(
+      language === 'EN'
+        ? 'Fields, slides and matrices 100% synchronized with tabs (Dossiers, Planning, Tracking, RACI, PERT, Kanban).'
+        : 'Champs, slides et matrices synchronisés à 100% avec les onglets (Dossiers, Planification, Suivi, RACI, PERT, Kanban).'
+    );
   };
 
-  const getProjectTotalBudget = (proj: Project, isReadOnly?: boolean): number => {
-    if (isReadOnly) {
-       const annuels = proj.budgetsAnnuels || {};
-       return (Number(annuels['2025']) || 0) + (Number(annuels['2026']) || 0) + (Number(annuels['2027']) || 0);
-    }
-    return (proj.tasks || []).reduce((sum, t) => sum + (Number(t.coutPlanifie) || 0), 0);
+  const handleUpdateCategorizedActors = (nextList: CategorizedActor[]) => {
+    updateActiveDossier(d => ({
+      ...d,
+      categorizedActors: nextList
+    }));
   };
 
-  const fmtBudget = (val: number | string | undefined | null): string => {
-    if (val === 0 || !val) return '0';
-    return Number(val).toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 1 });
+  const handleOpenInternalActorProfileFromCategory = (actorName: string) => {
+    setSelectedCategoryActorName(actorName || userProfile.fullName);
+    setIsCategoryProfileModalOpen(true);
   };
 
-  // --- ONGLET ACCUEIL ---
-  const renderAccueil = () => (
-    <div className="animate-in fade-in duration-500 h-full flex flex-col justify-center items-center py-6 w-full max-w-5xl mx-auto space-y-6 px-4">
-      
-      {/* HEADER HERO */}
-      <div className="bg-[#8A0000] w-full rounded-3xl p-8 md:p-10 shadow-2xl relative overflow-hidden flex flex-col">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-white opacity-5 rounded-full blur-3xl transform translate-x-1/2 -translate-y-1/2"></div>
-        <div className="absolute bottom-0 left-0 w-80 h-80 bg-black opacity-10 rounded-full blur-3xl transform -translate-x-1/2 translate-y-1/2"></div>
-
-        <div className="relative z-10 w-full">
-          <div className="inline-flex items-center space-x-2 bg-white/10 px-3 py-1 rounded-full text-xs text-white/90 font-semibold mb-4 border border-white/15">
-            <Sparkles className="w-3.5 h-3.5 text-[#00E676]" />
-            <span>Gestion Axée sur les Résultats (GAR) & EVM</span>
+  // Shared Macro Filter Bar (2x size on mobile portrait & landscape — Filters ONLY)
+  const renderMacroFilterBar = () => (
+    <div className="bg-white dark:bg-slate-900 rounded-md sm:rounded-xl border border-slate-200 dark:border-slate-800 p-1 sm:p-1.5 md:p-2.5 shadow-xs mb-1.5 sm:mb-3">
+      <div className="grid grid-cols-2 gap-1 sm:gap-2 items-center">
+        <div className="flex items-center gap-1 sm:gap-1.5 bg-slate-50 dark:bg-slate-800/80 px-2 py-1 md:px-2.5 md:py-1 rounded border border-slate-200 dark:border-slate-700 h-7 sm:h-7 md:h-auto">
+          <Filter className="hidden sm:block w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#0284c7] dark:text-[#90D5FF] shrink-0" />
+          <div className="flex-1 min-w-0">
+            <label className="hidden md:block text-[8px] font-bold uppercase text-slate-400 leading-none">
+              {language === 'EN' ? '1. Strategic Axis' : '1. Axe Stratégique'}
+            </label>
+            <select
+              value={filterAxeId}
+              onChange={e => {
+                setFilterAxeId(e.target.value);
+                setFilterProjectId('ALL');
+              }}
+              className="w-full bg-transparent text-[13px] sm:text-xs font-bold text-slate-800 dark:text-slate-100 focus:outline-none truncate leading-tight"
+            >
+              <option value="ALL">
+                {language === 'EN'
+                  ? `Axis: All (${(activeDossier.axes || []).length})`
+                  : `Axe : Tous (${(activeDossier.axes || []).length})`}
+              </option>
+              {(activeDossier.axes || []).map(ax => (
+                <option key={ax.id} value={ax.id}>
+                  {ax.name}
+                </option>
+              ))}
+            </select>
           </div>
+        </div>
 
-          <h1 className="text-2xl md:text-4xl font-black text-white leading-tight mb-4 tracking-tight">
-            Maîtrisez le Processus du <br />
-            <span className="text-[#00E676] inline-block mt-1">Suivi Budgétaire & Stratégique</span>
-          </h1>
-          
-          <p className="text-white/90 text-sm md:text-base max-w-2xl font-medium mb-8">
-            <strong className="text-white font-black">FAAB GAR</strong> est la plateforme numérique de référence dédiée au pilotage de la performance institutionnelle, à la maîtrise de la valeur acquise (EVM) et à la conformité des programmes PTBA.
-          </p>
-          
-          <div className="flex flex-col lg:flex-row items-start lg:items-end gap-6 w-full">
-            <div className="flex flex-wrap sm:flex-row gap-3 w-full sm:w-auto">
-              <button 
-                onClick={() => setActiveTab('projects')}
-                className="bg-[#00A884] hover:bg-[#008f6f] text-white px-5 py-3 rounded-lg font-bold text-sm flex items-center justify-center transition-all shadow-[0_4px_15px_rgba(0,168,132,0.3)] hover:shadow-[0_6px_20px_rgba(0,168,132,0.4)] hover:-translate-y-0.5 group"
-              >
-                <FolderOpen className="w-4 h-4 mr-2.5 group-hover:scale-110 transition-transform" />
-                Ouvrir les Portefeuilles
-              </button>
-
-              <button 
-                onClick={() => {
-                  addDossier();
-                  setActiveTab('projects');
-                }}
-                className="bg-transparent border-2 border-white/25 hover:border-[#00E676] text-white px-5 py-3 rounded-lg font-bold text-sm flex items-center justify-center transition-all hover:bg-white/10 hover:-translate-y-0.5 group"
-              >
-                <Plus className="w-4 h-4 mr-2 text-[#00E676] group-hover:scale-110 transition-transform" />
-                Nouveau Programme
-              </button>
-
-              {data.length === 0 ? (
-                <button 
-                  onClick={handleLoadDemoData}
-                  className="bg-white/15 hover:bg-white/25 border border-white/30 text-white px-4 py-3 rounded-lg font-bold text-sm flex items-center justify-center transition-all shadow-sm"
-                  title="Charger un jeu de données complet pour tester immédiatement l'EVM et les graphiques"
-                >
-                  <Sparkles className="w-4 h-4 mr-2 text-yellow-300" />
-                  Exemple Démo
-                </button>
-              ) : (
-                <button 
-                  onClick={handleClearData}
-                  className="bg-red-950/60 hover:bg-red-900 border border-red-500/40 text-red-100 px-3.5 py-3 rounded-lg font-bold text-xs flex items-center justify-center transition-all"
-                  title="Vider la base de données actuelle pour repartir d'une page blanche"
-                >
-                  <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
-                  Réinitialiser
-                </button>
-              )}
-            </div>
-            
-            <div className="flex-1"></div>
-
-            <div className="bg-[#2D2A32] rounded-xl p-5 border border-white/10 shadow-2xl min-w-[280px]">
-              <h3 className="text-[#00E676] text-[9px] font-black uppercase tracking-[0.2em] mb-1.5">Application conçue par :</h3>
-              <p className="text-white font-black text-lg mb-3 tracking-wide">KOFFIE FABIEN MICHAEL</p>
-              <div className="space-y-2">
-                <a href="mailto:fabien.frikupgeneration@gmail.com" className="text-white/80 hover:text-white text-xs flex items-center font-medium transition-colors">
-                  <Mail className="w-3.5 h-3.5 mr-2.5 text-white/50" /> 
-                  fabien.frikupgeneration@gmail.com
-                </a>
-                <a href="tel:+2250748082739" className="text-white/80 hover:text-white text-xs flex items-center font-medium transition-colors">
-                  <Phone className="w-3.5 h-3.5 mr-2.5 text-white/50" /> 
-                  00225 0748082739
-                </a>
-              </div>
-            </div>
+        <div className="flex items-center gap-1 sm:gap-1.5 bg-slate-50 dark:bg-slate-800/80 px-2 py-1 md:px-2.5 md:py-1 rounded border border-slate-200 dark:border-slate-700 h-7 sm:h-7 md:h-auto">
+          <Briefcase className="hidden sm:block w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#0284c7] dark:text-[#90D5FF] shrink-0" />
+          <div className="flex-1 min-w-0">
+            <label className="hidden md:block text-[8px] font-bold uppercase text-slate-400 leading-none">
+              {language === 'EN' ? '2. Operational Project' : '2. Projet Opérationnel'}
+            </label>
+            <select
+              value={filterProjectId}
+              onChange={e => setFilterProjectId(e.target.value)}
+              className="w-full bg-transparent text-[13px] sm:text-xs font-bold text-slate-800 dark:text-slate-100 focus:outline-none truncate leading-tight"
+            >
+              <option value="ALL">
+                {language === 'EN'
+                  ? `Project: All (${availableProjectsInFilter.length})`
+                  : `Projet : Tous (${availableProjectsInFilter.length})`}
+              </option>
+              {availableProjectsInFilter.map(pr => (
+                <option key={pr.id} value={pr.id}>
+                  {pr.name}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
       </div>
-
-      <div className="bg-[#88929B] w-full rounded-xl p-5 md:p-6 border-l-[6px] border-[#FF3B30] shadow-lg relative overflow-hidden">
-        <h2 className="flex items-center text-[#FF3B30] font-black text-xs md:text-sm uppercase tracking-[0.1em] mb-3">
-          <AlertCircle className="w-4 h-4 mr-2.5 shrink-0" strokeWidth={2.5} />
-          Accord de confidentialité & Propriété Intellectuelle
-        </h2>
-        <p className="text-xs md:text-[13px] leading-relaxed text-white/95 font-medium text-justify">
-          La présente plateforme, incluant son architecture structurelle, sa logique algorithmique et son design d'interface, constitue une œuvre de l'esprit protégée appartenant à son créateur. En utilisant cette application, l'administration ou l'institution utilisatrice s'engage formellement à respecter la stricte confidentialité de ce système. Toute copie, reproduction, ingénierie inverse, ou distribution non expressément autorisée de cet outil à des tiers est rigoureusement interdite sous peine de poursuites légales.
-        </p>
-      </div>
-
     </div>
   );
 
-  const renderDashboard = () => {
-    let filteredDashProjects = allProjects;
-    if (filterDashDossier !== 'FULL') filteredDashProjects = filteredDashProjects.filter(p => p.dossierId === filterDashDossier);
-    if (filterDashAxe !== 'FULL') filteredDashProjects = filteredDashProjects.filter(p => p.axeId === filterDashAxe);
-    if (filterDashProj !== 'FULL') filteredDashProjects = filteredDashProjects.filter(p => p.id === filterDashProj);
-    
-    const filteredDashTasks: (Task & { projectId: string })[] = [];
-    filteredDashProjects.forEach(proj => {
-      if (Array.isArray(proj.tasks)) {
-        proj.tasks.forEach(task => {
-          let keep = true;
-          if (filterDashYear !== 'ALL') {
-            const startYear = task.startDate ? new Date(task.startDate).getFullYear().toString() : '9999';
-            const endYear = task.endDate ? new Date(task.endDate).getFullYear().toString() : '0000';
-            if (!(startYear <= filterDashYear && endYear >= filterDashYear)) keep = false;
+  // ============================================================================
+  // SLIDEBAR MENU (Burger ☰) — Portefeuille / Dossier selector ONLY + Ordered Tabs
+  // ============================================================================
+  const renderSlidebar = () => {
+    // STRICT SECURITY & DISSOCIATION:
+    // - Never mount slidebar if not authenticated, if PIN is not verified, if device is locked, or if drawer closed.
+    // - Super Admin ('fabien.frikupgeneration@gmail.com') is strictly dissociated from the classic User workspace,
+    //   so the classic User Slidebar is ONLY available to authenticated & PIN-verified Regular Users.
+    if (!isRegularUserUnlocked || !isSlidebarOpen) return null;
 
-            if (keep && filterDashQuarter !== 'FULL') {
-              let qOverlap = 0;
-              if (filterDashQuarter === 'T1') qOverlap = getQuarterOverlapDays(task.startDate, task.endDate, filterDashYear, 0);
-              else if (filterDashQuarter === 'T2') qOverlap = getQuarterOverlapDays(task.startDate, task.endDate, filterDashYear, 1);
-              else if (filterDashQuarter === 'T3') qOverlap = getQuarterOverlapDays(task.startDate, task.endDate, filterDashYear, 2);
-              else if (filterDashQuarter === 'T4') qOverlap = getQuarterOverlapDays(task.startDate, task.endDate, filterDashYear, 3);
-              if (qOverlap <= 0) keep = false;
-            }
-          }
-          if (keep) {
-            filteredDashTasks.push({...task, projectId: proj.id});
-          }
-        });
-      }
-    });
-
-    const today = new Date();
-    let totalVP = 0; let totalVA = 0; let totalCR = 0;
-    let completedCount = 0; let blockedCount = 0; let inProgressCount = 0; let todoCount = 0;
-    let totalDecaissementPrevuADate = 0;
-    let totalDecaisse = 0;
-    let taskCompletionSum = 0;
-
-    let delayedDisbursementCount = 0;
-    let delayedByDateCount = 0;
-    let delayedByAmountCount = 0;
-    let sumDecaissementDelayDays = 0;
-
-    let minStartCPM: number | null = null;
-    let maxEndCPM: number | null = null;
-
-    filteredDashTasks.forEach(t => {
-      const vp = Number(t.coutPlanifie) || 0;
-      const cr = Number(t.coutReel) || 0;
-      const va = t.valeurAcquise !== undefined ? Number(t.valeurAcquise) : ((t.status === 'Terminé' || t.valideVA) ? vp : 0);
-      const decaisse = t.montantDecaissementReel !== undefined && t.montantDecaissementReel !== '' ? Number(t.montantDecaissementReel) : cr;
-
-      totalVP += vp;
-      totalCR += cr;
-      totalVA += va;
-      totalDecaisse += decaisse;
-
-      let logicalStatus = t.status;
-      if (logicalStatus !== 'Bloqué') {
-        if (vp > 0) {
-          if (va >= vp) logicalStatus = 'Terminé';
-          else if (va > 0 && va < vp) logicalStatus = 'En cours';
-          else if (va <= 0) logicalStatus = 'À faire';
-        } else {
-          if (va > 0) logicalStatus = 'Terminé';
+    // Reorganized into the exact 4 groups with spacing between groups (Strictly Regular User modules):
+    // Group 1: Accueil & Présentation, Profil Utilisateur
+    // Group 2: Dossiers & Projets, Fiche Technique & Résumé Exécutif, Générateur de Documents
+    // Group 3: Tableau de Bord Décisionnel, Réseau PERT, Tableau Kanban Interactif, Diagramme de Gantt & Arbre
+    // Group 4: Planification, Suivi des tâches, RACI
+    const navGroups: Array<
+      Array<{
+        id: string;
+        label: string;
+        icon: React.ReactNode;
+        badge?: string;
+      }>
+    > = [
+      [
+        { id: 'accueil', label: t.nav.accueil, icon: <Home className="w-4 h-4" /> },
+        {
+          id: 'profil',
+          label: t.nav.profil,
+          icon: <User className="w-4 h-4" />
         }
-      }
-
-      if (logicalStatus === 'Terminé') completedCount++;
-      else if (logicalStatus === 'Bloqué') blockedCount++;
-      else if (logicalStatus === 'En cours') inProgressCount++;
-      else todoCount++;
-
-      let taskProg = 0;
-      if (vp > 0) taskProg = Math.min(100, (va / vp) * 100);
-      else if (logicalStatus === 'Terminé') taskProg = 100;
-      taskCompletionSum += taskProg;
-
-      const sDateMs = new Date(t.startDate).getTime();
-      const eDateMs = new Date(t.endDate).getTime();
-      if (!isNaN(sDateMs)) { if (minStartCPM === null || sDateMs < minStartCPM) minStartCPM = sDateMs; }
-      if (!isNaN(eDateMs)) { if (maxEndCPM === null || eDateMs > maxEndCPM) maxEndCPM = eDateMs; }
-
-      let isDelayedByDate = false;
-      let isDelayedByAmount = false;
-
-      const expectedAmount = (t.montantDecaissementPrevu !== undefined && t.montantDecaissementPrevu !== '') ? Number(t.montantDecaissementPrevu) : vp;
-      const hasPassedPrevu = t.dateDecaissementPrevu ? (new Date(t.dateDecaissementPrevu) <= today) : (new Date(t.endDate) <= today);
-
-      if (hasPassedPrevu) {
-        totalDecaissementPrevuADate += expectedAmount;
-        if (decaisse < expectedAmount) isDelayedByAmount = true;
-      }
-
-      if (t.dateDecaissementPrevu) {
-        const prevuDate = new Date(t.dateDecaissementPrevu);
-        let delayDays = 0;
-        if (t.dateDecaissementReel) {
-          const reelDate = new Date(t.dateDecaissementReel);
-          if (reelDate > prevuDate) {
-            isDelayedByDate = true;
-            delayDays = Math.ceil((reelDate.getTime() - prevuDate.getTime()) / 86400000);
-          }
-        } else if (today > prevuDate) {
-          isDelayedByDate = true;
-          delayDays = Math.ceil((today.getTime() - prevuDate.getTime()) / 86400000);
+      ],
+      [
+        {
+          id: 'projects',
+          label: t.nav.projects,
+          icon: <FolderOpen className="w-4 h-4" />,
+          badge: `${dossiers.length}`
+        },
+        {
+          id: 'fiche',
+          label: t.nav.fiche,
+          icon: <FileText className="w-4 h-4" />
+        },
+        {
+          id: 'docgen',
+          label: t.nav.docgen,
+          icon: <FileSpreadsheet className="w-4 h-4" />,
+          badge: '10 Docs'
         }
-        if (delayDays > 0) sumDecaissementDelayDays += delayDays;
-      }
-
-      if (isDelayedByDate) delayedByDateCount++;
-      if (isDelayedByAmount) delayedByAmountCount++;
-      if (isDelayedByDate || isDelayedByAmount) delayedDisbursementCount++;
-    });
-
-    const sumDecaissementDelay = sumDecaissementDelayDays;
-    const cpmDays = (minStartCPM !== null && maxEndCPM !== null) ? Math.max(1, Math.ceil((maxEndCPM - minStartCPM) / (1000 * 60 * 60 * 24)) + 1) : 0;
-
-    const dashStatsTotal = filteredDashTasks.length;
-    const dashGlobalProgress = dashStatsTotal > 0 ? Math.round(taskCompletionSum / dashStatsTotal) : 0;
-    
-    const dashPieData = [
-      { name: 'Terminé', value: completedCount }, 
-      { name: 'En cours', value: inProgressCount },
-      { name: 'Bloqué', value: blockedCount }, 
-      { name: 'À faire', value: todoCount },
+      ],
+      [
+        {
+          id: 'dashboard',
+          label: t.nav.dashboard,
+          icon: <LayoutDashboard className="w-4 h-4" />
+        },
+        {
+          id: 'evm_dashboard',
+          label: language === 'EN' ? 'EVM Dashboard' : 'Tableau de Bord EVM',
+          icon: <LayoutDashboard className="w-4 h-4" />,
+          badge: 'EVM'
+        },
+        {
+          id: 'evm_ptba',
+          label: language === 'EN' ? 'AWPB (Annual Prog.)' : 'PTBA (Prog. Annuel)',
+          icon: <FileSpreadsheet className="w-4 h-4" />,
+          badge: language === 'EN' ? 'AWPB' : 'PTBA'
+        },
+        {
+          id: 'pert',
+          label: t.nav.pert,
+          icon: <Network className="w-4 h-4" />
+        },
+        {
+          id: 'kanban',
+          label: t.nav.kanban,
+          icon: <Kanban className="w-4 h-4" />
+        },
+        {
+          id: 'gantt',
+          label: t.nav.gantt,
+          icon: <GanttChart className="w-4 h-4" />
+        }
+      ],
+      [
+        {
+          id: 'planification',
+          label: t.nav.planification,
+          icon: <Calendar className="w-4 h-4" />,
+          badge: `${allDossierTasks.length}`
+        },
+        {
+          id: 'evm_suivi',
+          label: language === 'EN' ? 'EVM Tracking' : 'Suivi EVM',
+          icon: <TestTube className="w-4 h-4" />
+        },
+        {
+          id: 'raci',
+          label: t.nav.raci,
+          icon: <Users className="w-4 h-4" />,
+          badge: 'R-A-C-I'
+        },
+        {
+          id: 'categorie',
+          label: t.nav.categorie,
+          icon: <Layers className="w-4 h-4" />,
+          badge: '5 Cat.'
+        }
+      ]
     ];
 
-    const hasFinancialData = totalVP > 0 || totalCR > 0 || totalVA > 0;
-
-    const EC = totalVA - totalCR;
-    const ED = totalVA - totalVP;
-    const IPC = hasFinancialData ? (totalCR > 0 ? (totalVA / totalCR).toFixed(2) : (totalVA > 0 ? 'Max' : '1.00')) : '-';
-    const IPD = hasFinancialData ? (totalVP > 0 ? (totalVA / totalVP).toFixed(2) : (totalVA > 0 ? 'Max' : '1.00')) : '-';
-
-    let ecStatus;
-    if (!hasFinancialData) ecStatus = { label: "N/A", desc: "En attente de budgétisation.", color: "text-slate-400", bg: "bg-slate-100", tooltip: "Aucune donnée financière n'est disponible." };
-    else if (EC > 0) ecStatus = { label: "Favorable", desc: "Sous le budget, le projet coûte moins que prévu.", color: "text-emerald-600", bg: "bg-emerald-50", tooltip: "EC (Écart Coût) = VA - CR" };
-    else if (EC < 0) ecStatus = { label: "Défavorable", desc: "Dépassement budgétaire, le projet coûte plus que prévu.", color: "text-red-600", bg: "bg-red-50", tooltip: "EC (Écart Coût) = VA - CR" };
-    else ecStatus = { label: "Conforme", desc: "Le projet respecte strictement le budget.", color: "text-blue-600", bg: "bg-blue-50", tooltip: "EC (Écart Coût) = VA - CR" };
-
-    let edStatus;
-    if (!hasFinancialData) edStatus = { label: "N/A", desc: "En attente de budgétisation.", color: "text-slate-400", bg: "bg-slate-100", tooltip: "Aucune donnée financière n'est disponible." };
-    else if (ED > 0) edStatus = { label: "Favorable", desc: "Avance sur le planning.", color: "text-emerald-600", bg: "bg-emerald-50", tooltip: "ED (Écart Délai) = VA - VP" };
-    else if (ED < 0) edStatus = { label: "Défavorable", desc: "Retard par rapport au planning.", color: "text-red-600", bg: "bg-red-50", tooltip: "ED (Écart Délai) = VA - VP" };
-    else edStatus = { label: "Conforme", desc: "Le projet est en ligne avec le planning.", color: "text-blue-600", bg: "bg-blue-50", tooltip: "ED (Écart Délai) = VA - VP" };
-
-    const ipcNum = parseFloat(IPC);
-    let ipcStatus;
-    if (!hasFinancialData) ipcStatus = { label: "N/A", desc: "En attente.", color: "text-slate-400", tooltip: "" };
-    else if (isNaN(ipcNum) || ipcNum === 1) ipcStatus = { label: "Conforme", desc: "Le projet est exactement sur le budget.", color: "text-blue-600", tooltip: "IPC (Indice de Performance Coût) = VA / CR" };
-    else if (ipcNum > 1) ipcStatus = { label: "Favorable", desc: "Efficacité élevée, sous le budget.", color: "text-emerald-600", tooltip: "IPC (Indice de Performance Coût) = VA / CR" };
-    else ipcStatus = { label: "Défavorable", desc: "Inefficacité, dépassement de coûts.", color: "text-red-600", tooltip: "IPC (Indice de Performance Coût) = VA / CR" };
-
-    const ipdNum = parseFloat(IPD);
-    let ipdStatus;
-    if (!hasFinancialData) ipdStatus = { label: "N/A", desc: "En attente.", color: "text-slate-400", tooltip: "" };
-    else if (isNaN(ipdNum) || ipdNum === 1) ipdStatus = { label: "Conforme", desc: "Le projet respecte le planning.", color: "text-blue-600", tooltip: "IPD (Indice de Performance Délai) = VA / VP" };
-    else if (ipdNum > 1) ipdStatus = { label: "Favorable", desc: "Le projet progresse plus vite que prévu.", color: "text-emerald-600", tooltip: "IPD (Indice de Performance Délai) = VA / VP" };
-    else ipdStatus = { label: "Défavorable", desc: "Le projet progresse moins vite que prévu, retard.", color: "text-red-600", tooltip: "IPD (Indice de Performance Délai) = VA / VP" };
-
-    const ecartDecaissement = totalDecaisse - totalDecaissementPrevuADate;
-    const tauxRespectDecaissement = totalDecaissementPrevuADate > 0 ? Math.round((totalDecaisse / totalDecaissementPrevuADate) * 100) : (totalDecaisse > 0 ? 100 : 0);
-
-    const timeSeries: Record<string, { month: string; vp: number; va: number; cr: number; decPrevu: number; decReel: number }> = {};
-    
-    filteredDashTasks.forEach(t => {
-      const s = t.startDate ? new Date(t.startDate) : today;
-      const e = t.endDate ? new Date(t.endDate) : today;
-      const safeE = new Date(Math.max(s.getTime(), e.getTime()));
-      
-      const vp = Number(t.coutPlanifie) || 0;
-      const cr = Number(t.coutReel) || 0;
-      const va = t.valeurAcquise !== undefined ? Number(t.valeurAcquise) : ((t.status === 'Terminé' || t.valideVA) ? vp : 0);
-
-      let logicalStatus = t.status;
-      if (logicalStatus !== 'Bloqué') {
-        if (vp > 0) {
-          if (va >= vp) logicalStatus = 'Terminé';
-          else if (va > 0 && va < vp) logicalStatus = 'En cours';
-          else if (va <= 0) logicalStatus = 'À faire';
-        } else {
-          if (va > 0) logicalStatus = 'Terminé';
-        }
-      }
-
-      const isDone = logicalStatus === 'Terminé' || t.valideVA;
-      const actualEndRaw = isDone && t.dateVA ? new Date(t.dateVA) : today;
-      const safeActualEnd = new Date(Math.max(s.getTime(), actualEndRaw.getTime()));
-      
-      if (isNaN(s.getTime()) || isNaN(safeE.getTime())) return;
-
-      const durationVP = Math.max(1, Math.floor((safeE.getTime() - s.getTime()) / 86400000) + 1);
-      const vpPerDay = vp / durationVP;
-
-      const durationActual = Math.max(1, Math.floor((safeActualEnd.getTime() - s.getTime()) / 86400000) + 1);
-      const crPerDay = cr / durationActual;
-      
-      const totalEstimatedVA = t.valeurAcquise !== undefined ? Number(t.valeurAcquise) : (isDone ? vp : (vp * Math.min(1, durationActual / durationVP))); 
-      const vaPerDay = totalEstimatedVA / durationActual;
-
-      for(const d = new Date(s); d <= safeE; d.setDate(d.getDate() + 1)) {
-         const m = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-         if(!timeSeries[m]) timeSeries[m] = { month: m, vp: 0, va: 0, cr: 0, decPrevu: 0, decReel: 0 };
-         timeSeries[m].vp += vpPerDay;
-      }
-
-      if (logicalStatus !== 'À faire') {
-          for(const d = new Date(s); d <= safeActualEnd; d.setDate(d.getDate() + 1)) {
-             const m = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-             if(!timeSeries[m]) timeSeries[m] = { month: m, vp: 0, va: 0, cr: 0, decPrevu: 0, decReel: 0 };
-             timeSeries[m].cr += crPerDay;
-             timeSeries[m].va += vaPerDay;
-          }
-      }
-
-      if (t.dateDecaissementPrevu) {
-          const dp = new Date(t.dateDecaissementPrevu);
-          if (!isNaN(dp.getTime())) {
-              const m = `${dp.getFullYear()}-${String(dp.getMonth()+1).padStart(2,'0')}`;
-              if(!timeSeries[m]) timeSeries[m] = { month: m, vp: 0, va: 0, cr: 0, decPrevu: 0, decReel: 0 };
-              const prevuAmount = (t.montantDecaissementPrevu !== undefined && t.montantDecaissementPrevu !== '') ? Number(t.montantDecaissementPrevu) : vp;
-              timeSeries[m].decPrevu += prevuAmount;
-          }
-      }
-
-      if (t.dateDecaissementReel) {
-          const dr = new Date(t.dateDecaissementReel);
-          if (!isNaN(dr.getTime())) {
-              const m = `${dr.getFullYear()}-${String(dr.getMonth()+1).padStart(2,'0')}`;
-              if(!timeSeries[m]) timeSeries[m] = { month: m, vp: 0, va: 0, cr: 0, decPrevu: 0, decReel: 0 };
-              const decaisse = t.montantDecaissementReel !== undefined && t.montantDecaissementReel !== '' ? Number(t.montantDecaissementReel) : cr;
-              timeSeries[m].decReel += decaisse; 
-          }
-      }
-    });
-
-    const sortedMonths = Object.keys(timeSeries).sort();
-    let cVP = 0, cVA = 0, cCR = 0;
-    const sCurveData = sortedMonths.map(m => {
-        cVP += timeSeries[m].vp;
-        cVA += timeSeries[m].va;
-        cCR += timeSeries[m].cr;
-        const dateObj = new Date(m + '-01');
-        return {
-           label: dateObj.toLocaleDateString('fr-FR', {month: 'short', year: '2-digit'}),
-           vpMensuel: Math.round(timeSeries[m].vp),
-           crMensuel: Math.round(timeSeries[m].cr),
-           vaMensuel: Math.round(timeSeries[m].va),
-           decPrevuMensuel: Math.round(timeSeries[m].decPrevu || 0),
-           decReelMensuel: Math.round(timeSeries[m].decReel || 0),
-           cumulVP: Math.round(cVP),
-           cumulVA: Math.round(cVA),
-           cumulCR: Math.round(cCR)
-        };
-    });
-
-    const selectedDashDossier = data.find(d => d.id === filterDashDossier);
-    const defaultYear = selectedDashDossier ? selectedDashDossier.startYear : 'ALL';
-    const targetPieYear = filterDashYear !== 'ALL' ? filterDashYear : (defaultYear || 'ALL');
-    
-    const ptba2025Data: { name: string; value: number; fullName: string }[] = [];
-    data.forEach(dossier => {
-       if (filterDashDossier !== 'FULL' && dossier.id !== filterDashDossier) return;
-       if (dossier.axes) {
-          dossier.axes.forEach(axe => {
-             if (filterDashAxe !== 'FULL' && axe.id !== filterDashAxe) return;
-             
-             if (filterDashProj !== 'FULL') {
-                 if (axe.projects) {
-                    axe.projects.forEach(p => {
-                       if (p.id !== filterDashProj) return;
-                       if (p.tasks) {
-                          p.tasks.forEach(t => {
-                             const vp = Number(t.coutPlanifie) || 0;
-                             if (vp > 0 && t.startDate && t.endDate) {
-                                const dYear = getYearOverlapDays(t.startDate, t.endDate, targetPieYear);
-                                const [sYear, sMonth, sDay] = t.startDate.split('-').map(Number);
-                                const [eYear, eMonth, eDay] = t.endDate.split('-').map(Number);
-                                const start = new Date(sYear, sMonth - 1, sDay).getTime();
-                                const end = new Date(eYear, eMonth - 1, eDay).getTime();
-                                const totalDays = Math.max(1, (end - start) / (1000 * 60 * 60 * 24) + 1);
-                                const taskBYear = vp * (dYear / totalDays);
-                                
-                                if (taskBYear > 0) {
-                                   ptba2025Data.push({ name: t.name, value: Math.round(taskBYear), fullName: t.name });
-                                }
-                             }
-                          });
-                       }
-                    });
-                 }
-             } else if (filterDashAxe !== 'FULL') {
-                 if (axe.projects) {
-                    axe.projects.forEach(p => {
-                       const projBYear = getProjectAnnualBudget(p, targetPieYear, dossier.isReadOnly);
-                       if (projBYear > 0) {
-                          ptba2025Data.push({ name: p.name, value: projBYear, fullName: p.name });
-                       }
-                    });
-                 }
-             } else {
-                 let axeBYear = 0;
-                 if (axe.projects) {
-                    axe.projects.forEach(p => {
-                       axeBYear += getProjectAnnualBudget(p, targetPieYear, dossier.isReadOnly);
-                    });
-                 }
-                 if (axeBYear > 0) {
-                    ptba2025Data.push({ name: axe.name, value: axeBYear, fullName: axe.name });
-                 }
-             }
-          });
-       }
-    });
-
     return (
-      <div className="space-y-4 animate-in fade-in pb-10">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b pb-2 border-slate-200 gap-2">
-          <h2 className="text-xl font-bold text-slate-800 uppercase tracking-wide flex items-center">
-            <LayoutDashboard className="w-5 h-5 mr-2 text-blue-600" /> Cockpit EVM (Earned Value Management)
-          </h2>
-          {data.length === 0 && (
-            <button 
-              onClick={handleLoadDemoData}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-1.5 rounded-lg font-bold flex items-center shadow-sm transition-colors"
+      <div className="fixed inset-0 z-50 flex">
+        <div
+          className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs transition-opacity"
+          onClick={() => setIsSlidebarOpen(false)}
+        />
+
+        <aside className="relative z-10 w-80 sm:w-96 max-w-[92vw] h-full bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col">
+          {/* Sticky Top Bar: Action Icons + CSV Import/Export right next to Theme Toggle + Close Button */}
+          <div className="relative px-3.5 py-2.5 bg-[#0c4a6e] text-white flex items-center justify-between border-b border-sky-800 shrink-0 z-30">
+            <div className="flex items-center gap-1.5">
+              {/* 1. Import JSON */}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                title={t.actions.importJson}
+                className="w-8 h-8 rounded-lg bg-white/10 hover:bg-[#90D5FF] hover:text-slate-950 flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <Upload className="w-4 h-4" />
+              </button>
+              {/* 2. Save / Overwrite JSON */}
+              <button
+                onClick={handleSaveOrExportJSON}
+                title={t.actions.saveJson}
+                className="w-8 h-8 rounded-lg bg-white/10 hover:bg-[#90D5FF] hover:text-slate-950 flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <Save className="w-4 h-4" />
+              </button>
+              {/* 3. Export PDF Fiche Technique */}
+              <button
+                onClick={() =>
+                  generateDirectWhitePDF(
+                    activeDossier,
+                    userProfile,
+                    currency,
+                    language
+                  )
+                }
+                title={t.actions.exportPdf}
+                className="w-8 h-8 rounded-lg bg-white/10 hover:bg-[#90D5FF] hover:text-slate-950 flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <Printer className="w-4 h-4" />
+              </button>
+              {/* Connecter le dossier local faab-plan */}
+              <button
+                type="button"
+                onClick={async () => {
+                  const h = await pickFaabPlanFolder();
+                  if (h) {
+                    showToast(
+                      language === 'EN'
+                        ? `Local workspace folder connected: ${h.name} -> faab-plan/${activeDossier.name}/`
+                        : `Dossier local connecté : ${h.name} -> faab-plan/${activeDossier.name}/`
+                    );
+                  } else {
+                    showToast(
+                      language === 'EN'
+                        ? 'Direct disk access cancelled or restricted by browser.'
+                        : 'Accès dossier local annulé ou restreint par le navigateur.'
+                    );
+                  }
+                }}
+                title={
+                  language === 'EN'
+                    ? 'Connect local folder (faab-plan) on your computer'
+                    : 'Connecter le dossier local sur mon ordinateur (faab-plan)'
+                }
+                className="w-8 h-8 rounded-lg bg-white/10 hover:bg-[#90D5FF] hover:text-slate-950 flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <FolderOpen className="w-4 h-4" />
+              </button>
+              {/* 4. Theme Toggle (Dark / Light Mode) */}
+              <button
+                onClick={() =>
+                  setTheme(prev => (prev === 'dark' ? 'light' : 'dark'))
+                }
+                title={t.actions.theme}
+                className="w-8 h-8 rounded-lg bg-white/10 hover:bg-[#90D5FF] hover:text-slate-950 flex items-center justify-center transition-colors cursor-pointer"
+              >
+                {theme === 'dark' ? (
+                  <Sun className="w-4 h-4 text-[#90D5FF]" />
+                ) : (
+                  <Moon className="w-4 h-4" />
+                )}
+              </button>
+
+              {/* Scanner QR Code / Code-Barres Badge (Uniquement dans l'app, jamais sur l'accueil) */}
+              {activeTab !== 'accueil' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCsvMenuOpen(null);
+                    setIsSlidebarOpen(false);
+                    setIsGlobalScannerOpen(true);
+                  }}
+                  title={
+                    language === 'EN'
+                      ? 'Scan QR Code / Badge Barcode'
+                      : 'Scanner un QR Code / Badge'
+                  }
+                  className="w-8 h-8 rounded-lg bg-white/10 hover:bg-[#90D5FF] hover:text-slate-950 flex items-center justify-center transition-colors cursor-pointer text-[#90D5FF]"
+                >
+                  <QrCode className="w-4 h-4" />
+                </button>
+              )}
+
+              {/* 5. Icon 1 right of Theme Toggle: Importer CSV (Icon only, no text) */}
+              <button
+                type="button"
+                onClick={() =>
+                  setCsvMenuOpen(prev =>
+                    prev === 'slidebar-import' ? null : 'slidebar-import'
+                  )
+                }
+                title="Importer CSV"
+                aria-label="Importer CSV"
+                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors cursor-pointer ${
+                  csvMenuOpen === 'slidebar-import'
+                    ? 'bg-[#90D5FF] text-slate-950'
+                    : 'bg-white/10 hover:bg-[#90D5FF] hover:text-slate-950'
+                }`}
+              >
+                <FileUp className="w-4 h-4" />
+              </button>
+
+              {/* 6. Icon 2 right of Theme Toggle: Exporter CSV (Icon only, no text) */}
+              <button
+                type="button"
+                onClick={() =>
+                  setCsvMenuOpen(prev =>
+                    prev === 'slidebar-export' ? null : 'slidebar-export'
+                  )
+                }
+                title="Exporter CSV"
+                aria-label="Exporter CSV"
+                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors cursor-pointer ${
+                  csvMenuOpen === 'slidebar-export'
+                    ? 'bg-[#90D5FF] text-slate-950'
+                    : 'bg-white/10 hover:bg-[#90D5FF] hover:text-slate-950'
+                }`}
+              >
+                <FileDown className="w-4 h-4" />
+              </button>
+            </div>
+
+            <button
+              onClick={() => {
+                setCsvMenuOpen(null);
+                setIsSlidebarOpen(false);
+              }}
+              className="w-8 h-8 rounded-lg bg-white/10 hover:bg-rose-500 text-white flex items-center justify-center transition-colors cursor-pointer"
+              title={language === 'EN' ? 'Close menu' : 'Fermer le menu'}
             >
-              <Sparkles className="w-3.5 h-3.5 mr-1 text-yellow-300" />
-              Charger données démo
+              <X className="w-4 h-4" />
             </button>
-          )}
-        </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-200 shrink-0">
-          <div className="flex-1">
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center">
-              <Calendar className="w-3 h-3 mr-1" /> 1. Année Budgétaire
-            </label>
-            <div className="relative">
-              <select 
-                className="w-full appearance-none bg-slate-50 border border-slate-300 text-slate-800 text-sm font-medium rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 p-2.5 pr-8 outline-none transition-shadow cursor-pointer"
-                value={filterDashYear}
-                onChange={(e) => {
-                  setFilterDashYear(e.target.value);
-                  if (e.target.value === 'ALL') setFilterDashQuarter('FULL');
-                }}
-              >
-                <option value="ALL">Période Globale</option>
-                <option value="2024">Exercice 2024</option>
-                <option value="2025">Exercice 2025</option>
-                <option value="2026">Exercice 2026</option>
-                <option value="2027">Exercice 2027</option>
-              </select>
-              <ChevronRight className="w-4 h-4 text-slate-400 absolute right-3 top-3 rotate-90 pointer-events-none" />
-            </div>
-          </div>
-          <div className="flex-1">
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center">
-              <Filter className="w-3 h-3 mr-1" /> 2. Filtrer par Programme
-            </label>
-            <div className="relative">
-              <select 
-                className="w-full appearance-none bg-slate-50 border border-slate-300 text-slate-800 text-sm font-medium rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 p-2.5 pr-8 outline-none transition-shadow cursor-pointer"
-                value={filterDashDossier}
-                onChange={(e) => { 
-                  setFilterDashDossier(e.target.value); 
-                  setFilterDashAxe('FULL');
-                  setFilterDashProj('FULL');
-                }}
-              >
-                <option value="FULL">Tous les programmes</option>
-                {data.map(dossier => (
-                  <option key={dossier.id} value={dossier.id}>{dossier.name}</option>
-                ))}
-              </select>
-              <ChevronRight className="w-4 h-4 text-slate-400 absolute right-3 top-3 rotate-90 pointer-events-none" />
-            </div>
-          </div>
-          <div className="flex-1">
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center">
-              <Filter className="w-3 h-3 mr-1" /> 3. Composante
-            </label>
-            <div className="relative">
-              <select 
-                className="w-full appearance-none bg-slate-50 border border-slate-300 text-slate-800 text-sm font-medium rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 p-2.5 pr-8 outline-none transition-shadow cursor-pointer"
-                value={filterDashAxe}
-                onChange={(e) => { 
-                  setFilterDashAxe(e.target.value); 
-                  setFilterDashProj('FULL');
-                }}
-              >
-                <option value="FULL">Toutes les composantes</option>
-                {data.filter(d => filterDashDossier === 'FULL' || d.id === filterDashDossier).map(dossier => dossier.axes?.map(axe => (
-                  <option key={axe.id} value={axe.id}>{axe.name}</option>
-                )))}
-              </select>
-              <ChevronRight className="w-4 h-4 text-slate-400 absolute right-3 top-3 rotate-90 pointer-events-none" />
-            </div>
-          </div>
-          <div className="flex-1">
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center">
-              <FolderTree className="w-3 h-3 mr-1" /> 4. Projet
-            </label>
-            <div className="relative">
-              <select 
-                className="w-full appearance-none bg-slate-50 border border-slate-300 text-slate-800 text-sm font-medium rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 p-2.5 pr-8 outline-none transition-shadow cursor-pointer"
-                value={filterDashProj}
-                onChange={(e) => setFilterDashProj(e.target.value)}
-              >
-                <option value="FULL">Tous les projets</option>
-                {allProjects
-                  .filter(p => filterDashDossier === 'FULL' || p.dossierId === filterDashDossier)
-                  .filter(p => filterDashAxe === 'FULL' || p.axeId === filterDashAxe)
-                  .map((proj, index) => (
-                    <option key={proj.id} value={proj.id} className="truncate">{index + 1}. {proj.name}</option>
-                ))}
-              </select>
-              <ChevronRight className="w-4 h-4 text-slate-400 absolute right-3 top-3 rotate-90 pointer-events-none" />
-            </div>
-          </div>
-        </div>
-
-        {/* CARTES DE KPIS EVM */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-          <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between">
-            <div className="flex justify-between items-start">
-              <div>
-                <p className="text-xs font-bold text-slate-500 uppercase">Avancement</p>
-                <p className="text-2xl font-black text-slate-800 mt-1">{dashGlobalProgress}%</p>
-                <p className="text-[10px] text-slate-400">{dashStatsTotal} Tâches au total</p>
-              </div>
-              <div className="relative w-11 h-11 shrink-0 flex items-center justify-center">
-                <svg className="w-full h-full transform -rotate-90 absolute top-0 left-0">
-                  <circle cx="22" cy="22" r="19" stroke="#f8fafc" strokeWidth="3" fill="none" />
-                  <circle 
-                    cx="22" cy="22" r="19" stroke="#22c55e" strokeWidth="3" fill="none" 
-                    strokeDasharray="119.4" strokeDashoffset={119.4 * (1 - dashGlobalProgress / 100)} 
-                    strokeLinecap="round" className="transition-all duration-1000 ease-out"
-                  />
-                </svg>
-                <span className="text-[10px] font-bold text-green-600 relative z-10">{dashGlobalProgress}%</span>
-              </div>
-            </div>
-            <div className="mt-2 pt-2 border-t border-slate-100 flex justify-between items-end">
-              <div>
-                <p className="text-[9px] text-slate-400 uppercase">Budget Total</p>
-                <p className="text-sm font-black text-slate-700">{fmtBudget(totalVP)} M</p>
-              </div>
-              <div className="text-right">
-                <p className="text-[9px] text-slate-400 uppercase" title="Critical Path Method (Durée du chemin critique)">CPM</p>
-                <p className="text-sm font-black text-slate-700">{cpmDays} Jours</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between" title={ecStatus.tooltip}>
-            <p className="text-xs font-bold text-slate-500 uppercase flex justify-between">
-              Valeur Acquise (VA) <span className="text-green-600">{fmtBudget(totalVA)} M</span>
-            </p>
-            <div className="mt-2 pt-2 border-t border-slate-100 flex justify-between items-end">
-              <div>
-                <p className="text-[10px] text-slate-400 uppercase">Écart de Coût (EC)</p>
-                <p className={`text-lg font-black ${ecStatus.color}`}>{!hasFinancialData ? '-' : `${EC > 0 ? '+' : ''}${fmtBudget(EC)} M`}</p>
-              </div>
-              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${ecStatus.bg} ${ecStatus.color}`}>{ecStatus.label}</span>
-            </div>
-            <p className="text-[9px] text-slate-500 mt-1.5 leading-tight italic">{ecStatus.desc}</p>
-          </div>
-
-          <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between" title={edStatus.tooltip}>
-            <p className="text-xs font-bold text-slate-500 uppercase flex justify-between">
-              Valeur Prévue (VP) <span className={hasFinancialData ? "text-blue-600" : "text-slate-400"}>{fmtBudget(totalVP)} M</span>
-            </p>
-            <div className="mt-2 pt-2 border-t border-slate-100 flex justify-between items-end">
-              <div>
-                <p className="text-[10px] text-slate-400 uppercase">Écart de Délai (ED)</p>
-                <p className={`text-lg font-black ${edStatus.color}`}>{!hasFinancialData ? '-' : `${ED > 0 ? '+' : ''}${fmtBudget(ED)} M`}</p>
-              </div>
-              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${edStatus.bg} ${edStatus.color}`}>{edStatus.label}</span>
-            </div>
-            <p className="text-[9px] text-slate-500 mt-1.5 leading-tight italic">{edStatus.desc}</p>
-          </div>
-
-          <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between">
-            <p className="text-xs font-bold text-slate-500 uppercase mb-2">Coût Réel (CR)</p>
-            <p className={`text-2xl font-black ${hasFinancialData ? "text-orange-600" : "text-slate-400"}`}>{fmtBudget(totalCR)} M</p>
-            <div className="w-full bg-slate-100 h-1.5 mt-2 rounded-full overflow-hidden">
-              <div className="bg-orange-500 h-full transition-all duration-500" style={{ width: `${totalVP > 0 ? Math.min(100, (totalCR/totalVP)*100) : 0}%` }}></div>
-            </div>
-          </div>
-
-          <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between">
-            <p className="text-xs font-bold text-slate-500 uppercase mb-2">Indices de Performance</p>
-            <div className="mb-2" title={ipcStatus.tooltip}>
-              <div className="flex justify-between items-center mb-0.5">
-                <span className="text-xs font-medium text-slate-600">IPC (Coûts)</span>
-                <span className={`text-sm font-bold ${ipcStatus.color}`}>{IPC}</span>
-              </div>
-              <p className={`text-[8px] leading-tight italic ${ipcStatus.color} opacity-80`}>{ipcStatus.label}: {ipcStatus.desc}</p>
-            </div>
-            <div className="pt-2 border-t border-slate-100" title={ipdStatus.tooltip}>
-              <div className="flex justify-between items-center mb-0.5">
-                <span className="text-xs font-medium text-slate-600">IPD (Délais)</span>
-                <span className={`text-sm font-bold ${ipdStatus.color}`}>{IPD}</span>
-              </div>
-              <p className={`text-[8px] leading-tight italic ${ipdStatus.color} opacity-80`}>{ipdStatus.label}: {ipdStatus.desc}</p>
-            </div>
-          </div>
-
-          <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between">
-            <p className="text-xs font-bold text-slate-500 uppercase mb-2">Suivi Décaissements</p>
-            <div className="mb-2" title="Écart financier et retard total cumulé en jours">
-              <div className="flex justify-between items-center mb-0.5">
-                <div className="flex items-center space-x-2">
-                  <span className="text-xs font-medium text-slate-600">Écart Planning</span>
-                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${!hasFinancialData ? 'bg-slate-100 text-slate-400 border border-slate-200' : (sumDecaissementDelay > 0 ? 'bg-red-50 text-red-600 border border-red-100' : 'bg-green-50 text-green-600 border border-green-100')}`} title="Retard total cumulé de décaissement">
-                    <Clock className="w-2.5 h-2.5 inline mr-0.5 -mt-0.5" />
-                    {!hasFinancialData ? 'N/A' : (sumDecaissementDelay > 0 ? `${sumDecaissementDelay} j de retard` : 'À jour')}
-                  </span>
+            {/* Dropdown Menu Importer CSV — Contenu strictement dans les limites du panneau latéral */}
+            {csvMenuOpen === 'slidebar-import' && (
+              <div className="absolute left-2 right-2 top-full mt-1.5 max-w-[calc(100vw-24px)] rounded-xl bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-2xl border-2 border-[#0284c7] dark:border-[#90D5FF] p-1.5 z-[9999] whitespace-normal">
+                <div className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-[#0c4a6e] dark:text-[#90D5FF] border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                  <span>{language === 'EN' ? 'Import CSV File (UTF-8)' : 'Importer un fichier CSV (UTF-8)'}</span>
+                  <button
+                    type="button"
+                    onClick={() => setCsvMenuOpen(null)}
+                    className="text-slate-400 hover:text-slate-700 dark:hover:text-white font-bold cursor-pointer"
+                  >
+                    ✕
+                  </button>
                 </div>
-                <span className={`text-sm font-bold ${!hasFinancialData ? 'text-slate-400' : (ecartDecaissement >= 0 ? 'text-green-600' : 'text-red-600')}`}>
-                  {!hasFinancialData ? '-' : `${ecartDecaissement > 0 ? '+' : ''}${fmtBudget(ecartDecaissement)} M`}
-                </span>
+                <button
+                  type="button"
+                  onClick={() => csvPlanInputRef.current?.click()}
+                  className="w-full px-2.5 py-2 text-left text-[11px] font-extrabold hover:bg-sky-50 dark:hover:bg-sky-950/60 rounded-lg flex items-start gap-2 transition-colors cursor-pointer whitespace-normal break-words leading-snug"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-[#0284c7] dark:text-[#90D5FF] shrink-0 mt-0.5" />
+                  <span className="flex-1">
+                    {language === 'EN'
+                      ? 'Import Planning (Macroplanning) from CSV'
+                      : 'Importer la Planification (Macroplanning) depuis un CSV'}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => csvRaciInputRef.current?.click()}
+                  className="w-full px-2.5 py-2 text-left text-[11px] font-extrabold hover:bg-sky-50 dark:hover:bg-sky-950/60 rounded-lg flex items-start gap-2 border-t border-slate-100 dark:border-slate-800 transition-colors cursor-pointer whitespace-normal break-words leading-snug"
+                >
+                  <Users className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                  <span className="flex-1">
+                    {language === 'EN'
+                      ? 'Import RACI Matrix from CSV'
+                      : 'Importer la Matrice RACI depuis un CSV'}
+                  </span>
+                </button>
               </div>
-              <p className={`text-[8px] leading-tight italic ${!hasFinancialData ? 'text-slate-400' : (ecartDecaissement >= 0 ? 'text-green-600' : 'text-red-600')} opacity-80`}>
-                {!hasFinancialData ? 'En attente' : (ecartDecaissement >= 0 ? 'Décaissements à jour' : 'Retard de décaissement')}
-              </p>
-            </div>
-            <div className="pt-2 border-t border-slate-100" title="Ratio des montants décaissés par rapport aux prévisions à date">
-              <div className="flex justify-between items-center mb-0.5">
-                <span className="text-xs font-medium text-slate-600">Taux Respect</span>
-                <span className={`text-sm font-bold ${tauxRespectDecaissement >= 100 ? 'text-green-600' : 'text-red-600'}`}>{tauxRespectDecaissement}%</span>
-              </div>
-              <p className={`text-[8px] leading-tight italic ${tauxRespectDecaissement >= 100 ? 'text-green-600' : 'text-red-600'} opacity-80`}>{tauxRespectDecaissement >= 100 ? 'Planning respecté' : 'Planning non respecté'}</p>
-            </div>
-          </div>
-        </div>
+            )}
 
-        {/* BANDEAU STATUTS TÂCHES */}
-        <div className="flex flex-wrap lg:flex-nowrap gap-3 md:gap-4">
-          <div className="flex-1 min-w-[100px] bg-white rounded-2xl shadow-sm border border-slate-100 p-4 border-l-[6px] border-l-blue-500 flex flex-col justify-center min-h-[90px]">
-            <span className="text-xs font-bold text-slate-500 mb-1 tracking-wide">Tâches</span>
-            <span className="text-3xl font-black text-slate-800">{dashStatsTotal}</span>
-          </div>
-          <div className="flex-1 min-w-[100px] bg-white rounded-2xl shadow-sm border border-slate-100 p-4 border-l-[6px] border-l-green-500 flex flex-col justify-center min-h-[90px]">
-            <span className="text-xs font-bold text-slate-500 mb-1 tracking-wide">Terminées</span>
-            <span className="text-3xl font-black text-slate-800">{completedCount}</span>
-          </div>
-          <div className="flex-1 min-w-[100px] bg-white rounded-2xl shadow-sm border border-slate-100 p-4 border-l-[6px] border-l-yellow-500 flex flex-col justify-center min-h-[90px]">
-            <span className="text-xs font-bold text-slate-500 mb-1 tracking-wide">En Cours</span>
-            <span className="text-3xl font-black text-slate-800">{inProgressCount}</span>
-          </div>
-          <div className="flex-1 min-w-[100px] bg-white rounded-2xl shadow-sm border border-slate-100 p-4 border-l-[6px] border-l-red-500 flex flex-col justify-center min-h-[90px]">
-            <span className="text-xs font-bold text-slate-500 mb-1 tracking-wide">Bloqués</span>
-            <span className="text-3xl font-black text-slate-800">{blockedCount}</span>
-          </div>
-          <div className="flex-[1.8] min-w-[220px] bg-white rounded-2xl shadow-sm border border-slate-100 p-4 border-l-[6px] border-l-purple-500 flex flex-col justify-between min-h-[90px]">
-            <div className="flex justify-between items-start mb-2" title="Nombre de tâches impactées négativement par le délai ou le montant de décaissement">
-              <span className="text-xs font-bold text-slate-500 flex items-center tracking-wide"><Clock className="w-4 h-4 mr-1.5 text-purple-400"/> Retard Décaissement</span>
-              <span className="text-3xl font-black text-purple-600 leading-none">{delayedDisbursementCount}</span>
-            </div>
-            <div className="border-t border-slate-100 pt-2 grid grid-cols-2 gap-2 text-center">
-              <div className="flex flex-col">
-                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Impactées par délai</span>
-                <span className="text-[11px] font-black text-[#f43f5e]">{delayedByDateCount > 0 ? delayedByDateCount : '-'}</span>
+            {/* Dropdown Menu Exporter CSV — Contenu strictement dans les limites du panneau latéral */}
+            {csvMenuOpen === 'slidebar-export' && (
+              <div className="absolute left-2 right-2 top-full mt-1.5 max-w-[calc(100vw-24px)] rounded-xl bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-2xl border-2 border-[#0284c7] dark:border-[#90D5FF] p-1.5 z-[9999] whitespace-normal">
+                <div className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-[#0c4a6e] dark:text-[#90D5FF] border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                  <span>{language === 'EN' ? 'Export to Excel CSV (UTF-8 BOM)' : 'Exporter en CSV Excel (UTF-8 BOM)'}</span>
+                  <button
+                    type="button"
+                    onClick={() => setCsvMenuOpen(null)}
+                    className="text-slate-400 hover:text-slate-700 dark:hover:text-white font-bold cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleExportPlanificationCSV}
+                  className="w-full px-2.5 py-2 text-left text-[11px] font-extrabold hover:bg-sky-50 dark:hover:bg-sky-950/60 rounded-lg flex items-start gap-2 transition-colors cursor-pointer whitespace-normal break-words leading-snug"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-[#0284c7] dark:text-[#90D5FF] shrink-0 mt-0.5" />
+                  <span className="flex-1">
+                    {language === 'EN'
+                      ? 'Export Planning (Macroplanning) to CSV'
+                      : 'Exporter la Planification (Macroplanning) en CSV'}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportRaciCSV}
+                  className="w-full px-2.5 py-2 text-left text-[11px] font-extrabold hover:bg-sky-50 dark:hover:bg-sky-950/60 rounded-lg flex items-start gap-2 border-t border-slate-100 dark:border-slate-800 transition-colors cursor-pointer whitespace-normal break-words leading-snug"
+                >
+                  <Users className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                  <span className="flex-1">
+                    {language === 'EN'
+                      ? 'Export RACI Matrix to CSV'
+                      : 'Exporter la Matrice RACI en CSV'}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const ok = await downloadProgramFolderZip(activeDossier.name);
+                    setCsvMenuOpen(null);
+                    if (ok) {
+                      showToast(
+                        language === 'EN'
+                          ? `Complete folder "faab-plan/${activeDossier.name}/" exported as ZIP.`
+                          : `Dossier complet "faab-plan/${activeDossier.name}/" exporté en archive ZIP.`
+                      );
+                    } else {
+                      showToast(
+                        language === 'EN'
+                          ? `Please save at least one document for "${activeDossier.name}" first.`
+                          : `Veuillez d'abord enregistrer au moins un document pour le programme "${activeDossier.name}".`
+                      );
+                    }
+                  }}
+                  className="w-full px-2.5 py-2 text-left text-[11px] font-extrabold hover:bg-sky-50 dark:hover:bg-sky-950/60 rounded-lg flex items-start gap-2 border-t border-slate-100 dark:border-slate-800 transition-colors cursor-pointer whitespace-normal break-words leading-snug"
+                >
+                  <FolderOpen className="w-4 h-4 text-[#0284c7] dark:text-[#90D5FF] shrink-0 mt-0.5" />
+                  <span className="flex-1">
+                    {language === 'EN'
+                      ? `Export entire folder: faab-plan/${activeDossier.name}/*.zip`
+                      : `Exporter tout le dossier : faab-plan/${activeDossier.name}/*.zip`}
+                  </span>
+                </button>
               </div>
-              <div className="flex flex-col">
-                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Impactées par montant</span>
-                <span className="text-[11px] font-black text-[#f43f5e]">{delayedByAmountCount > 0 ? delayedByAmountCount : '-'}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* GRAPHIQUE 1 : ÉVOLUTION PÉRIODIQUE */}
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mt-4">
-          <h3 className="text-sm font-bold text-slate-700 mb-4 uppercase tracking-wide">Évolution Périodique (EVM & Décaissements)</h3>
-          <div className="h-64">
-            {sCurveData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={sCurveData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
-                  <YAxis tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}M`} />
-                  <RechartsTooltip cursor={{fill: '#f1f5f9'}} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                  <Legend verticalAlign="top" height={36} iconType="circle" wrapperStyle={{ fontSize: '11px', fontWeight: 'bold' }} />
-                  <Bar dataKey="vpMensuel" name="Valeur Planifiée (VP)" fill="#3b82f6" radius={[2, 2, 0, 0]} maxBarSize={25} />
-                  <Bar dataKey="vaMensuel" name="Valeur Acquise (VA)" fill="#10b981" radius={[2, 2, 0, 0]} maxBarSize={25} />
-                  <Bar dataKey="crMensuel" name="Coût Réel (CR)" fill="#f59e0b" radius={[2, 2, 0, 0]} maxBarSize={25} />
-                  <Bar dataKey="decPrevuMensuel" name="Décaissement Prévu" fill="#a855f7" radius={[2, 2, 0, 0]} maxBarSize={25} />
-                  <Bar dataKey="decReelMensuel" name="Décaissement Réel" fill="#14b8a6" radius={[2, 2, 0, 0]} maxBarSize={25} />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="h-full flex items-center justify-center text-slate-400 italic text-sm border-2 border-dashed border-slate-100 rounded-lg">Données temporelles insuffisantes ou dossier vide</div>
             )}
           </div>
-        </div>
 
-        {/* GRAPHIQUE 2 : COURBE EN S (CUMUL EVM) */}
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-          <h3 className="text-sm font-bold text-slate-700 mb-4 uppercase tracking-wide">Analyse de la Valeur Acquise (Courbe en S)</h3>
-          <div className="h-80">
-            {sCurveData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={sCurveData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
-                  <YAxis tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}M`} />
-                  <RechartsTooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                  <Legend verticalAlign="top" height={36} iconType="plainline" wrapperStyle={{ fontSize: '11px', fontWeight: 'bold' }} />
-                  <Line type="monotone" dataKey="cumulVP" name="Valeur Planifiée (VP)" stroke="#3b82f6" strokeWidth={3} dot={false} activeDot={{ r: 6 }} />
-                  <Line type="monotone" dataKey="cumulVA" name="Valeur Acquise (VA)" stroke="#10b981" strokeWidth={3} dot={false} activeDot={{ r: 6 }} />
-                  <Line type="monotone" dataKey="cumulCR" name="Coût Réel (CR)" stroke="#f59e0b" strokeWidth={3} dot={false} activeDot={{ r: 6 }} />
-                </ComposedChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="h-full flex items-center justify-center text-slate-400 italic text-sm border-2 border-dashed border-slate-100 rounded-lg">Données temporelles insuffisantes ou dossier vide</div>
-            )}
-          </div>
-        </div>
+          {/* Executive Google Auth Status in Slidebar */}
+          <AuthStatusButton
+            user={authUser}
+            isAuthLoading={isAuthLoading}
+            isSigningIn={isSigningIn}
+            onSignIn={handleGoogleSignIn}
+            onSignOut={handleSignOut}
+            language={language}
+            variant="slidebar"
+            onLockDevice={() => {
+              setIsSlidebarOpen(false);
+              setIsDeviceLocked(true);
+              setSuperAdminAuthModalStep('device_locked');
+              setIsSuperAdminAuthModalOpen(true);
+            }}
+          />
 
-        {/* GRAPHIQUES 3 & 4 : RÉPARTITION PTBA ET STATUTS TÂCHES */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-            <h3 className="text-sm font-bold text-slate-700 mb-4 uppercase tracking-wide">Répartition PTBA (Budget Programmé {targetPieYear === 'ALL' ? 'Global' : targetPieYear})</h3>
-            <div className="h-64">
-              {ptba2025Data.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={ptba2025Data} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
-                      {ptba2025Data.map((_, index) => <Cell key={`cell-${index}`} fill={DISTRIBUTION_COLORS[index % DISTRIBUTION_COLORS.length]} />)}
-                    </Pie>
-                    <RechartsTooltip formatter={(v: any) => `${fmtBudget(v)} M`} />
-                    <Legend wrapperStyle={{ fontSize: '10px' }} />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (<div className="h-full flex items-center justify-center text-slate-400 italic text-sm border-2 border-dashed border-slate-100 rounded-lg">Aucun budget programmé pour cette sélection</div>)}
-            </div>
-          </div>
-          
-          <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-            <h3 className="text-sm font-bold text-slate-700 mb-4 uppercase tracking-wide">Statut d'exécution des Tâches</h3>
-            <div className="h-64">
-              {dashStatsTotal > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={dashPieData} layout="vertical" margin={{ top: 0, right: 30, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
-                    <XAxis type="number" tick={{ fontSize: 10 }} />
-                    <YAxis dataKey="name" type="category" tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                    <RechartsTooltip cursor={{fill: 'transparent'}} />
-                    <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={20}>
-                      {dashPieData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[entry.name] || '#9CA3AF'} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-full flex items-center justify-center text-slate-400 italic text-sm border-2 border-dashed border-slate-100 rounded-lg">Aucune tâche enregistrée dans ce dossier</div>
+          {/* SCROLLABLE CONTAINER: Logo + Description below the icons scrolls up with mobile swipe! */}
+          <div className="flex-1 overflow-y-auto divide-y divide-slate-200 dark:divide-slate-800">
+            {/* Scrollable Logo & Brand Header */}
+            <div className="p-4 bg-gradient-to-b from-[#0c4a6e] to-[#082f49] text-white">
+              <div className="flex items-center gap-3.5">
+                <div className="shrink-0 flex items-center justify-center">
+                  <AppLogo className="w-20 h-20 sm:w-24 sm:h-24" />
+                </div>
+                <div className="min-w-0">
+                  <div className="inline-block px-2 py-0.5 rounded bg-[#90D5FF] text-slate-950 text-[9px] font-black uppercase tracking-widest mb-1">
+                    {language === 'EN' ? 'UNIVERSAL PLATFORM' : 'PLATEFORME UNIVERSELLE'}
+                  </div>
+                  <h2 className="text-base font-black tracking-tight uppercase truncate">
+                    FAAB BUD
+                  </h2>
+                  <p className="text-[11px] text-[#90D5FF] font-medium leading-snug">
+                    {language === 'EN'
+                      ? 'Strategic Planning, Budget Tracking, EVM & Disbursements'
+                      : 'Planification Stratégique, Suivi Budgétaire, EVM & Décaissements'}
+                  </p>
+                </div>
+              </div>
+              {lastJsonFileName && (
+                <div className="mt-2.5 px-2.5 py-1 rounded bg-white/10 text-[10px] font-mono text-[#90D5FF] truncate">
+                  {language === 'EN' ? 'Active JSON:' : 'JSON actif :'} {lastJsonFileName}
+                </div>
               )}
             </div>
-          </div>
-        </div>
 
+            {/* Contenu du menu déroulant sous le header : taille de police 12px en mode mobile */}
+            <div className="slidebar-menu-content divide-y divide-slate-200 dark:divide-slate-800">
+              {/* Sélecteur de Portefeuille / Dossier UNIQUEMENT */}
+              <div className="p-2.5 sm:p-3 bg-sky-50/60 dark:bg-slate-800/50 space-y-1 sm:space-y-1.5">
+                <label className="block text-[12px] sm:text-[10px] font-black uppercase tracking-wider text-[#0284c7] dark:text-[#90D5FF] leading-none">
+                  {language === 'EN' ? 'Portfolio / Dossier' : 'Portefeuille / Dossier'}
+                </label>
+                <select
+                  value={activeDossier.id}
+                  onChange={e => {
+                    setActiveDossierId(e.target.value);
+                    setFilterAxeId('ALL');
+                    setFilterProjectId('ALL');
+                    const found = dossiers.find(d => d.id === e.target.value);
+                    if (found)
+                      showToast(
+                        language === 'EN'
+                          ? `Selected dossier: ${found.name}`
+                          : `Dossier sélectionné : ${found.name}`
+                      );
+                  }}
+                  className="w-full h-8 sm:h-auto bg-white dark:bg-slate-900 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-md sm:rounded-lg border border-[#90D5FF] dark:border-slate-700 text-[12px] sm:text-xs font-extrabold text-slate-900 dark:text-white focus:outline-none truncate"
+                >
+                  {dossiers.map(d => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Navigation Modules organized into 4 groups with spacing between each group */}
+              <div className="p-3 space-y-4">
+                {navGroups.map((group, groupIdx) => (
+                  <div
+                    key={groupIdx}
+                    className={`space-y-1 ${
+                      groupIdx > 0
+                        ? 'pt-3 border-t border-slate-200/80 dark:border-slate-800'
+                        : ''
+                    }`}
+                  >
+                    {group.map(item => {
+                      const isActive = activeTab === item.id;
+                      return (
+                        <button
+                          key={item.id}
+                          onClick={() => navigateTo(item.id)}
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-[12px] sm:text-xs font-bold transition-all cursor-pointer ${
+                            isActive
+                              ? 'bg-[#0c4a6e] text-white shadow-xs'
+                              : 'text-slate-700 dark:text-slate-200 hover:bg-sky-50 dark:hover:bg-slate-800'
+                          }`}
+                        >
+                          <span className="flex items-center gap-2.5 truncate">
+                            <span
+                              className={
+                                isActive ? 'text-[#90D5FF]' : 'text-[#0284c7]'
+                              }
+                            >
+                              {item.icon}
+                            </span>
+                            <span className="truncate text-[12px] sm:text-xs">{item.label}</span>
+                          </span>
+                          {item.badge && (
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[12px] sm:text-[10px] font-black ${
+                                isActive
+                                  ? 'bg-[#90D5FF] text-slate-950'
+                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                              }`}
+                            >
+                              {item.badge}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </aside>
       </div>
     );
   };
 
-  const renderProjectManager = () => (
-    <div className="space-y-6 animate-in fade-in duration-500 pb-10">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b pb-2 border-emerald-200 shrink-0 gap-3">
-        <div>
-          <h2 className="text-xl font-bold text-gray-800 flex items-center">
-            <Folder className="w-6 h-6 mr-2 text-emerald-600" /> 
-            Programmes Stratégiques
-          </h2>
-          <p className="text-xs text-gray-500 mt-0.5">Structurez vos portefeuilles, composantes et projets institutionnels</p>
-        </div>
-        <div className="flex items-center space-x-2">
-          {data.length === 0 && (
-            <button 
-              onClick={handleLoadDemoData} 
-              className="bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 px-3 py-2 rounded-lg text-sm font-bold shadow-sm flex items-center transition-colors"
-            >
-              <Sparkles className="w-4 h-4 mr-1.5 text-emerald-600" /> Charger exemple
-            </button>
-          )}
-          <button 
-            onClick={addDossier} 
-            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm flex items-center transition-colors"
-          >
-            <Plus className="w-4 h-4 mr-2" /> Nouveau Programme
-          </button>
-        </div>
-      </div>
+  // ============================================================================
+  // VIEW: TABLEAU DE BORD DÉCISIONNEL (Exact 2 Charts from User Screenshot!)
+  // ============================================================================
+  const renderDashboardView = () => {
+    const delayedRows = flatTaskRows.filter(
+      r =>
+        r.metrics.effectiveStatus === 'Bloqué' ||
+        r.metrics.ecartFinDays > 0 ||
+        r.metrics.ecartDebutDays > 0
+    );
 
-      <div className="space-y-8">
-        {data.length === 0 && (
-          <div className="text-center bg-white border-2 border-dashed border-gray-300 rounded-2xl py-14 px-6 shadow-sm">
-            <FolderTree className="w-12 h-12 text-emerald-500 mx-auto mb-3 opacity-60" />
-            <h3 className="text-lg font-bold text-slate-800 mb-1">Aucun programme enregistré</h3>
-            <p className="text-slate-500 text-sm mb-6 max-w-md mx-auto">
-              Créez votre premier programme institutionnel ou chargez un exemple modèle complet pour démarrer.
-            </p>
-            <div className="flex justify-center gap-3">
-              <button 
-                onClick={addDossier} 
-                className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-lg text-sm font-bold transition-all shadow-sm flex items-center"
-              >
-                <Plus className="w-4 h-4 mr-2" /> Créer un Programme
-              </button>
-              <button 
-                onClick={handleLoadDemoData} 
-                className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-bold transition-all shadow-sm flex items-center"
-              >
-                <Sparkles className="w-4 h-4 mr-2 text-yellow-600" /> Charger l'exemple Démo
-              </button>
+    // Prepare per-project operational breakdown for Chart 1
+    const projectChartData = filteredProjects.map(proj => {
+      const pTasks = proj.tasks || [];
+      let done = 0;
+      let inProgress = 0;
+      let todo = 0;
+      let blocked = 0;
+      let late = 0;
+
+      pTasks.forEach(tk => {
+        const m = computeTaskMetrics(tk, todayISO);
+        if (m.effectiveStatus === 'Terminé') done++;
+        else if (m.effectiveStatus === 'En cours') inProgress++;
+        else if (m.effectiveStatus === 'Bloqué') blocked++;
+        else todo++;
+
+        if (m.ecartFinDays > 0 || m.ecartDebutDays > 0) {
+          late++;
+        }
+      });
+
+      return {
+        id: proj.id,
+        name: proj.name,
+        done,
+        inProgress,
+        todo,
+        blocked,
+        total: pTasks.length,
+        late
+      };
+    });
+
+    const maxBarValue = Math.max(
+      8,
+      ...projectChartData.map(d => Math.max(d.total, d.late, 1))
+    );
+    const yAxisMax = Math.ceil(maxBarValue / 2) * 2;
+    const yTicks = [
+      0,
+      Math.round(yAxisMax * 0.25),
+      Math.round(yAxisMax * 0.5),
+      Math.round(yAxisMax * 0.75),
+      yAxisMax
+    ];
+
+    // Prepare Donut Chart segments for Chart 2 ("Répartition par Statut")
+    const totalActiveOps = allDossierTasks.length;
+    const donutSegments = [
+      {
+        label: language === 'EN' ? 'Blocked' : 'Bloquées',
+        count: statusCounts.Bloqué,
+        color: '#ef4444'
+      },
+      {
+        label: language === 'EN' ? 'In Progress' : 'En cours',
+        count: statusCounts['En cours'],
+        color: '#0ea5e9'
+      },
+      {
+        label: language === 'EN' ? 'Completed' : 'Terminées',
+        count: statusCounts.Terminé,
+        color: '#10b981'
+      },
+      {
+        label: language === 'EN' ? 'To Do' : 'À faire',
+        count: statusCounts['À faire'],
+        color: '#94a3b8'
+      }
+    ];
+
+    const donutRadius = 64;
+    const donutCircumference = 2 * Math.PI * donutRadius;
+    let cumulativeFraction = 0;
+
+    return (
+      <div className="space-y-2.5 sm:space-y-5">
+        {renderMacroFilterBar()}
+
+        {/* 4 KPI Cards (Reduced size & font-size on mobile!) */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-1.5 sm:gap-3">
+          <div className="bg-white dark:bg-slate-900 p-2 sm:p-4 rounded-lg sm:rounded-xl border border-slate-200 dark:border-slate-800 border-l-3 sm:border-l-4 border-l-[#0c4a6e] shadow-xs">
+            <div className="flex items-center justify-between text-[8.5px] sm:text-xs font-bold text-slate-500 dark:text-slate-400 uppercase leading-tight">
+              <span className="truncate">
+                {language === 'EN' ? 'Axes & Projects' : 'Axes & Projets'}
+              </span>
+              <Layers className="w-3 h-3 sm:w-4 sm:h-4 text-[#0284c7] shrink-0" />
+            </div>
+            <div className="mt-0.5 sm:mt-2 text-xs sm:text-2xl font-black text-slate-900 dark:text-white leading-tight truncate">
+              {(activeDossier.axes || []).length} Axes /{' '}
+              {availableProjectsInFilter.length} Proj.
+            </div>
+            <div className="mt-0.5 sm:mt-1 text-[8px] sm:text-[11px] text-slate-500 truncate leading-tight">
+              Dossier : <strong className="text-[#0284c7]">{activeDossier.name}</strong>
             </div>
           </div>
-        )}
 
-        {data.map(dossier => (
-          <div key={dossier.id} className="bg-white rounded-xl shadow-sm border border-gray-300 overflow-hidden">
-            
-            <div className="px-5 py-4 flex flex-col lg:flex-row lg:justify-between lg:items-end text-white gap-4 transition-colors bg-emerald-600">
-              <div className="flex-1 w-full">
-                <div className="flex flex-col sm:flex-row gap-4 w-full items-end">
-                  <div className="flex-1 w-full">
-                    <label className="text-[10px] font-bold text-emerald-100 uppercase tracking-wider mb-1.5 block">Nom du Programme</label>
-                    <div className="flex items-center w-full">
-                      <FolderTree className="w-6 h-6 mr-3 text-emerald-100 shrink-0" />
-                      <input 
-                        className="bg-transparent border-b border-emerald-400 focus:border-white outline-none w-full placeholder-emerald-200 text-white font-bold text-lg pb-1" 
-                        value={dossier.name} 
-                        onChange={(e) => updateDossierItemName(dossier.id, null, null, e.target.value)} 
-                        placeholder="Saisissez le nom du programme..."
-                        autoFocus={!dossier.isReadOnly}
-                      />
-                    </div>
-                  </div>
-                  <div className="flex-1 w-full sm:w-1/3">
-                    <label className="text-[10px] font-bold text-emerald-100 uppercase tracking-wider mb-1.5 block">Institution Rattachée</label>
-                    <div className="flex items-center w-full">
-                      <Building2 className="w-5 h-5 mr-2 text-emerald-100 shrink-0" />
-                      <input 
-                        className="bg-transparent border-b border-emerald-400 focus:border-white outline-none w-full placeholder-emerald-200 text-white font-bold text-sm pb-1" 
-                        value={dossier.institution || ''} 
-                        onChange={(e) => updateDossierInstitution(dossier.id, e.target.value)} 
-                        placeholder="Ex: Ministère, ONG, Entreprise..."
-                      />
-                    </div>
-                  </div>
-                  <div className="w-24 shrink-0">
-                    <label className="text-[10px] font-bold text-emerald-100 uppercase tracking-wider mb-1.5 block">Année (Début)</label>
-                    <input 
-                      type="number" 
-                      className="w-full bg-white text-emerald-900 border-none outline-none rounded p-1.5 font-bold text-sm text-center shadow-inner focus:ring-2 focus:ring-emerald-300" 
-                      value={dossier.startYear || ''} 
-                      onChange={(e) => updateDossierYear(dossier.id, e.target.value)} 
-                      placeholder="Ex: 2025"
-                    />
-                  </div>
-                  <div className="w-24 shrink-0">
-                    <label className="text-[10px] font-bold text-emerald-100 uppercase tracking-wider mb-1.5 block">Année (Fin)</label>
-                    <input 
-                      type="number" 
-                      className="w-full bg-white text-emerald-900 border-none outline-none rounded p-1.5 font-bold text-sm text-center shadow-inner focus:ring-2 focus:ring-emerald-300" 
-                      value={dossier.endYear || (dossier.startYear ? Number(dossier.startYear) + 2 : '')} 
-                      onChange={(e) => updateDossierEndYear(dossier.id, e.target.value)} 
-                      placeholder="Ex: 2027"
-                    />
-                  </div>
-                  <div className="w-28 shrink-0">
-                    <label className="text-[10px] font-bold text-emerald-100 uppercase tracking-wider mb-1.5 text-center block">Durée Globale</label>
-                    <div className="w-full bg-emerald-700/50 border border-emerald-500 rounded p-1.5 text-emerald-100 font-bold text-sm text-center shadow-inner">
-                      {dossier.startYear ? `${dossier.startYear}-${dossier.endYear || Number(dossier.startYear) + 2}` : '-'}
-                    </div>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="flex items-center space-x-2 shrink-0 mt-2 lg:mt-0">
-                <button 
-                  onClick={() => {
-                    setFilterPTBADossier(dossier.id);
-                    setFilterPTBAAxe('FULL');
-                    setFilterPTBAProj('FULL');
-                    setFilterPTBAYear('ALL');
-                    setFilterPTBAQuarter('FULL');
+          <div className="bg-white dark:bg-slate-900 p-2 sm:p-4 rounded-lg sm:rounded-xl border border-slate-200 dark:border-slate-800 border-l-3 sm:border-l-4 border-l-[#0284c7] shadow-xs">
+            <div className="flex items-center justify-between text-[8.5px] sm:text-xs font-bold text-slate-500 dark:text-slate-400 uppercase leading-tight">
+              <span className="truncate">
+                {language === 'EN' ? 'Activities & Milestones' : 'Activités & Jalons'}
+              </span>
+              <Target className="w-3 h-3 sm:w-4 sm:h-4 text-[#0284c7] shrink-0" />
+            </div>
+            <div className="mt-0.5 sm:mt-2 text-xs sm:text-2xl font-black text-slate-900 dark:text-white leading-tight truncate">
+              {allDossierTasks.length} {language === 'EN' ? 'Item(s)' : 'Élément(s)'}
+            </div>
+            <div className="mt-0.5 sm:mt-1 text-[8px] sm:text-[11px] text-emerald-600 font-bold truncate leading-tight">
+              {statusCounts.Terminé} {language === 'EN' ? 'done' : 'terminé(s)'} •{' '}
+              {statusCounts['En cours']} {language === 'EN' ? 'in progress' : 'en cours'}
+            </div>
+          </div>
 
-                    setFilterProcessusDossier(dossier.id);
-                    setFilterProcessusAxe('FULL');
-                    setFilterProcessusProj('FULL');
-                    setFilterProcessusYear('ALL');
-                    setFilterProcessusQuarter('FULL');
+          <div className="bg-white dark:bg-slate-900 p-2 sm:p-4 rounded-lg sm:rounded-xl border border-slate-200 dark:border-slate-800 border-l-3 sm:border-l-4 border-l-emerald-500 shadow-xs">
+            <div className="flex items-center justify-between text-[8.5px] sm:text-xs font-bold text-slate-500 dark:text-slate-400 uppercase leading-tight">
+              <span className="truncate">
+                {language === 'EN' ? 'Consolidated Budget' : 'Budget Consolidé'}
+              </span>
+              <DollarSign className="w-3 h-3 sm:w-4 sm:h-4 text-emerald-500 shrink-0" />
+            </div>
+            <div className="mt-0.5 sm:mt-2 text-[11px] sm:text-xl font-black text-slate-900 dark:text-white truncate leading-tight">
+              {formatCurrency(totalBudgetFCFA, currency, language)}
+            </div>
+            <div className="mt-0.5 sm:mt-1 text-[8px] sm:text-[11px] text-slate-500 truncate leading-tight">
+              Horizon : {activeDossier.horizonPlan}
+            </div>
+          </div>
 
-                    setFilterDashDossier(dossier.id);
-                    setFilterDashAxe('FULL');
-                    setFilterDashProj('FULL');
-                    setFilterDashYear('ALL');
-                    setFilterDashQuarter('FULL');
+          <div className="bg-white dark:bg-slate-900 p-2 sm:p-4 rounded-lg sm:rounded-xl border border-slate-200 dark:border-slate-800 border-l-3 sm:border-l-4 border-l-[#90D5FF] shadow-xs">
+            <div className="flex items-center justify-between text-[8.5px] sm:text-xs font-bold text-slate-500 dark:text-slate-400 uppercase leading-tight">
+              <span className="truncate">
+                {language === 'EN' ? 'Completion Rate' : 'Taux d’Achèvement'}
+              </span>
+              <TrendingUp className="w-3 h-3 sm:w-4 sm:h-4 text-[#0284c7] shrink-0" />
+            </div>
+            <div className="mt-0.5 sm:mt-2 text-xs sm:text-2xl font-black text-[#0284c7] dark:text-[#90D5FF] leading-tight">
+              {completionPct}%
+            </div>
+            <div className="w-full h-1 sm:h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden mt-1 sm:mt-2">
+              <div
+                className="h-full bg-[#0284c7]"
+                style={{ width: `${Math.min(100, completionPct)}%` }}
+              />
+            </div>
+          </div>
+        </div>
 
-                    setActiveTab('processus');
-                  }} 
-                  className="bg-white/20 hover:bg-white/30 text-white border border-white/40 px-3 py-1.5 rounded-lg text-sm font-bold shadow-sm flex items-center transition-colors" 
-                  title="Ouvrir les tableaux de suivi pour ce programme"
-                >
-                  <Activity className="w-4 h-4 mr-1.5" /> Suivi EVM
-                </button>
+        {/* THE 2 EXACT CHARTS FROM ATTACHED SCREENSHOT (2/3 Left + 1/3 Right) */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-2.5 sm:gap-4">
+          {/* Chart 1 (2/3 width): Répartition opérationnelle par Projet */}
+          <div className="lg:col-span-2 bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-slate-800 p-2.5 sm:p-5 shadow-sm flex flex-col justify-between">
+            <div>
+              <h3 className="text-[11px] sm:text-base font-extrabold text-slate-800 dark:text-white mb-1.5 sm:mb-3 flex items-center gap-1.5 sm:gap-2">
+                <Briefcase className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-600 dark:text-[#90D5FF] shrink-0" />
+                <span>
+                  {language === 'EN'
+                    ? 'Operational Breakdown by Project'
+                    : 'Répartition opérationnelle par Projet'}
+                </span>
+              </h3>
 
-                <button onClick={() => addAxe(dossier.id)} className="bg-white/20 hover:bg-white/30 text-white border border-white/40 px-3 py-1.5 rounded-lg text-sm font-bold shadow-sm flex items-center transition-colors ml-2">
-                  <Plus className="w-4 h-4 mr-1" /> Composante
-                </button>
-                <button onClick={() => deleteDossier(dossier.id)} className="bg-red-500/80 hover:bg-red-600 text-white p-1.5 rounded-lg transition-colors shadow-sm" title="Supprimer ce programme">
-                  <Trash2 className="w-4 h-4" />
-                </button>
+              {/* Legend matching the screenshot */}
+              <div className="flex flex-wrap items-center justify-center gap-x-2.5 sm:gap-x-4 gap-y-1 text-[8.5px] sm:text-[11px] font-medium mb-2 sm:mb-4">
+                <span className="inline-flex items-center gap-1 text-[#ef4444]">
+                  <span className="w-2 h-2 sm:w-3 sm:h-3 rounded-xs bg-[#ef4444] inline-block" />
+                  {language === 'EN' ? 'Blocked (Bottlenecks)' : 'Bloquées (Goulots)'}
+                </span>
+                <span className="inline-flex items-center gap-1 text-[#8b5cf6]">
+                  <span className="w-2 h-2 sm:w-3 sm:h-3 rounded-xs bg-[#8b5cf6] inline-block" />
+                  {language === 'EN' ? 'Delayed' : 'En Retard'}
+                </span>
+                <span className="inline-flex items-center gap-1 text-[#0ea5e9]">
+                  <span className="w-2 h-2 sm:w-3 sm:h-3 rounded-xs bg-[#0ea5e9] inline-block" />
+                  {language === 'EN' ? 'In Progress' : 'En cours'}
+                </span>
+                <span className="inline-flex items-center gap-1 text-[#10b981]">
+                  <span className="w-2 h-2 sm:w-3 sm:h-3 rounded-xs bg-[#10b981] inline-block" />
+                  {language === 'EN' ? 'Completed' : 'Terminées'}
+                </span>
+                <span className="inline-flex items-center gap-1 text-[#64748b]">
+                  <span className="w-2 h-2 sm:w-3 sm:h-3 rounded-xs bg-[#64748b] inline-block" />
+                  {language === 'EN' ? 'Total Tasks' : 'Total Tâches'}
+                </span>
+                <span className="inline-flex items-center gap-1 text-[#94a3b8]">
+                  <span className="w-2 h-2 sm:w-3 sm:h-3 rounded-xs bg-[#94a3b8] inline-block" />
+                  {language === 'EN' ? 'To Do' : 'À faire'}
+                </span>
               </div>
             </div>
 
-            <div className="p-5 space-y-6">
-              {(!dossier.axes || dossier.axes.length === 0) && (
-                <div className="text-center bg-gray-50 border-2 border-dashed border-gray-200 rounded-xl py-8">
-                  <p className="text-slate-500 text-sm mb-4 font-medium">Ce programme est vide. Créez une composante stratégique pour commencer.</p>
-                  <button onClick={() => addAxe(dossier.id)} className="bg-emerald-100 hover:bg-emerald-200 text-emerald-700 px-4 py-2 rounded-lg text-sm font-bold transition-colors shadow-sm inline-flex items-center">
-                    <Plus className="w-4 h-4 mr-2" /> Créer une Composante
-                  </button>
-                </div>
-              )}
-              {dossier.axes && dossier.axes.map(axe => {
-                const computedAxeBudget = (axe.projects || []).reduce((acc, proj) => acc + getProjectTotalBudget(proj, dossier.isReadOnly), 0);
-
-                return (
-                <div key={axe.id} className="bg-slate-50 border border-slate-200 rounded-lg p-4 group/axe relative">
-                  
-                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center border-b border-slate-200 pb-3 mb-4 gap-3">
-                    <div className="flex items-center flex-1 max-w-xl">
-                      <Target className="w-5 h-5 mr-2 text-emerald-600 shrink-0" />
-                      <div className="flex items-center w-full">
-                        <input 
-                          className="font-bold text-slate-800 text-base bg-white border border-dashed border-slate-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none w-full px-2 py-1 rounded" 
-                          value={axe.name} 
-                          onChange={(e) => updateDossierItemName(dossier.id, axe.id, null, e.target.value)} 
-                          placeholder="Nom de la composante..."
-                          readOnly={dossier.isReadOnly}
-                        />
-                        {!dossier.isReadOnly && (
-                          <button onClick={() => deleteAxe(dossier.id, axe.id)} className="ml-2 text-slate-400 hover:text-red-500 p-1.5 bg-white rounded shadow-sm opacity-0 group-hover/axe:opacity-100 transition-opacity" title="Supprimer">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-3">
-                      <div className="text-sm bg-white border border-slate-300 text-slate-700 font-bold px-3 py-1.5 rounded-full shadow-sm flex items-center">
-                        <DollarSign className="w-4 h-4 mr-1 text-green-500" />
-                        <input 
-                          type="number" 
-                          className="w-24 outline-none bg-slate-100 border border-slate-200 rounded px-2 py-0.5 text-right mr-2 text-slate-500 cursor-not-allowed font-semibold" 
-                          value={computedAxeBudget} 
-                          readOnly
-                          title="Calculé automatiquement depuis les tâches"
-                        />
-                        <span>M / Monnaie</span>
-                      </div>
-                      <button onClick={() => addProject(dossier.id, axe.id)} className="text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold px-3 py-1.5 rounded-lg transition-colors flex items-center shrink-0 shadow-sm">
-                        <Plus className="w-3.5 h-3.5 mr-1" /> Projet
-                      </button>
-                    </div>
+            {projectChartData.length === 0 ? (
+              <p className="text-xs text-slate-400 italic py-8 sm:py-12 text-center">
+                {language === 'EN'
+                  ? 'No project for this filter.'
+                  : 'Aucun projet pour ce filtre.'}
+              </p>
+            ) : (
+              <div className="relative pt-1 sm:pt-2 pb-1">
+                {/* Chart Plot Area */}
+                <div className="flex items-end h-36 sm:h-56">
+                  {/* Y-axis labels */}
+                  <div className="flex flex-col justify-between h-28 sm:h-48 pr-1.5 sm:pr-2 text-[8.5px] sm:text-[11px] font-mono text-slate-400 select-none">
+                    {[...yTicks].reverse().map((tick, idx) => (
+                      <span key={idx} className="leading-none">
+                        {tick}
+                      </span>
+                    ))}
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {(!axe.projects || axe.projects.length === 0) && (
-                      <div className="col-span-full flex flex-col items-center justify-center bg-white border-2 border-dashed border-slate-200 rounded-xl py-6">
-                        <p className="text-slate-400 text-sm italic mb-3">Aucun projet n'a encore été ajouté.</p>
-                        <button 
-                          onClick={() => addProject(dossier.id, axe.id)} 
-                          className="bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 px-4 py-2 rounded-lg text-sm font-bold transition-colors flex items-center shadow-sm"
-                        >
-                          <Plus className="w-4 h-4 mr-2" /> Créer le premier projet
-                        </button>
-                      </div>
-                    )}
-                    {axe.projects && axe.projects.map(proj => {
-                      const projBudget = getProjectTotalBudget(proj, dossier.isReadOnly);
-                      
+                  {/* Bars + Horizontal Gridlines */}
+                  <div className="relative flex-1 h-28 sm:h-48 border-l border-b border-slate-300 dark:border-slate-700 flex items-end justify-around px-1.5 sm:px-6">
+                    {/* Horizontal dashed gridlines */}
+                    <div className="absolute inset-0 flex flex-col justify-between pointer-events-none">
+                      {yTicks.map((_, idx) => (
+                        <div
+                          key={idx}
+                          className="w-full border-t border-dashed border-slate-200 dark:border-slate-800"
+                        />
+                      ))}
+                    </div>
+
+                    {/* Grouped Bars per Project */}
+                    {projectChartData.map(proj => {
+                      const scalePct = (val: number) =>
+                        yAxisMax > 0
+                          ? Math.min(100, (val / yAxisMax) * 100)
+                          : 0;
+
+                      const donePct = scalePct(proj.done);
+                      const inProgPct = scalePct(proj.inProgress);
+                      const todoPct = scalePct(proj.todo);
+                      const blockedPct = scalePct(proj.blocked);
+                      const totalPct = scalePct(proj.total);
+                      const latePct = scalePct(proj.late);
+
                       return (
-                        <div key={proj.id} className="bg-white border border-slate-200 rounded-lg p-4 flex flex-col justify-between shadow-sm hover:shadow-md transition-shadow relative group">
-                          <button 
-                            onClick={() => deleteProject(dossier.id, axe.id, proj.id)} 
-                            className="absolute top-2 right-2 text-slate-300 hover:text-white hover:bg-red-500 p-1.5 rounded-md opacity-0 group-hover:opacity-100 transition-all z-10"
-                            title="Supprimer ce projet"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                          
-                          <div className="mb-4 pr-6">
-                            <div className="flex items-start mb-2">
-                              <Edit3 className="w-3 h-3 text-emerald-500 mr-1.5 mt-1 shrink-0" />
-                              <textarea 
-                                className={`font-bold text-slate-700 text-sm bg-slate-50 border border-slate-200 outline-none w-full resize-none focus:ring-1 focus:ring-emerald-400 focus:bg-white rounded p-1.5 ${dossier.isReadOnly ? 'cursor-default' : ''}`} 
-                                rows={2}
-                                value={proj.name} 
-                                onChange={(e) => updateDossierItemName(dossier.id, axe.id, proj.id, e.target.value)} 
-                                placeholder="Nom du projet..."
-                                readOnly={dossier.isReadOnly}
+                        <div
+                          key={proj.id}
+                          className="relative z-10 flex flex-col items-center h-full justify-end group max-w-[140px] flex-1"
+                        >
+                          <div className="flex items-end justify-center gap-1 sm:gap-2 w-full h-full px-0.5 sm:px-1">
+                            {/* Bar 1: Stacked Status Breakdown (Terminées + En cours + À faire + Bloquées) */}
+                            <div
+                              className="w-3.5 sm:w-7 h-full flex flex-col-reverse justify-start rounded-t overflow-hidden"
+                              title={`${proj.name} — Terminées: ${proj.done}, En cours: ${proj.inProgress}, À faire: ${proj.todo}, Bloquées: ${proj.blocked}`}
+                            >
+                              {proj.done > 0 && (
+                                <div
+                                  style={{ height: `${donePct}%` }}
+                                  className="w-full bg-[#10b981] transition-all"
+                                />
+                              )}
+                              {proj.inProgress > 0 && (
+                                <div
+                                  style={{ height: `${inProgPct}%` }}
+                                  className="w-full bg-[#0ea5e9] transition-all"
+                                />
+                              )}
+                              {proj.todo > 0 && (
+                                <div
+                                  style={{ height: `${todoPct}%` }}
+                                  className="w-full bg-[#94a3b8] transition-all"
+                                />
+                              )}
+                              {proj.blocked > 0 && (
+                                <div
+                                  style={{ height: `${blockedPct}%` }}
+                                  className="w-full bg-[#ef4444] transition-all"
+                                />
+                              )}
+                            </div>
+
+                            {/* Bar 2: Total Tâches */}
+                            <div className="w-3.5 sm:w-7 h-full flex items-end">
+                              <div
+                                style={{ height: `${totalPct}%` }}
+                                className="w-full bg-[#64748b] rounded-t transition-all"
+                                title={`${proj.name} — Total Tâches: ${proj.total}`}
                               />
                             </div>
-                            <div className="text-xs text-slate-500 flex items-center mt-2 bg-slate-50 px-2 py-1.5 rounded border border-slate-100 w-max mb-3">
-                              <DollarSign className="w-3.5 h-3.5 mr-1 text-green-500" />
-                              Budget projet : <strong className="ml-1 text-slate-700">{projBudget} M</strong>
-                            </div>
 
-                            <div className="bg-slate-100/60 rounded-lg p-2.5 border border-slate-200">
-                              <div className="font-bold text-slate-500 mb-2 flex items-center text-[9px] uppercase tracking-wider">
-                                <Calendar className="w-3 h-3 mr-1 text-blue-500" /> Répartition par Tâches
-                              </div>
-                              <div className="grid grid-cols-3 gap-2">
-                                {['2025', '2026', '2027'].map(year => (
-                                  <div key={year} className="bg-white rounded border border-slate-200 p-1.5 flex flex-col items-center shadow-sm">
-                                    <span className="text-[9px] font-bold text-slate-400 mb-0.5">{year}</span>
-                                    {dossier.isReadOnly ? (
-                                      <span className={`font-bold text-xs ${proj.budgetsAnnuels && proj.budgetsAnnuels[year] ? 'text-slate-800' : 'text-slate-300'}`}>
-                                        {(proj.budgetsAnnuels && proj.budgetsAnnuels[year] !== null && proj.budgetsAnnuels[year] !== '') ? `${proj.budgetsAnnuels[year]} M` : '-'}
-                                      </span>
-                                    ) : (
-                                      <span className="font-bold text-[10px] text-blue-600 bg-blue-50/80 px-2 py-0.5 rounded w-full text-center">
-                                        {fmtBudget(getProjectAnnualBudget(proj, year, false))} M
-                                      </span>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
+                            {/* Bar 3: En Retard */}
+                            <div className="w-3.5 sm:w-7 h-full flex items-end">
+                              <div
+                                style={{
+                                  height: `${
+                                    proj.late > 0 ? Math.max(4, latePct) : 0
+                                  }%`
+                                }}
+                                className="w-full bg-[#8b5cf6] rounded-t transition-all"
+                                title={`${proj.name} — En Retard: ${proj.late}`}
+                              />
                             </div>
                           </div>
-                          <button 
-                            onClick={() => { 
-                              setFilterProcessusDossier(dossier.id);
-                              setFilterProcessusAxe(axe.id); 
-                              setFilterProcessusProj(proj.id); 
-                              setFilterProcessusYear('ALL');
-                              setFilterProcessusQuarter('FULL');
-
-                              setFilterPTBADossier(dossier.id);
-                              setFilterPTBAAxe(axe.id);
-                              setFilterPTBAProj(proj.id);
-                              setFilterPTBAYear('ALL');
-                              setFilterPTBAQuarter('FULL');
-
-                              setFilterDashDossier(dossier.id);
-                              setFilterDashAxe(axe.id);
-                              setFilterDashProj(proj.id);
-                              setFilterDashYear('ALL');
-                              setFilterDashQuarter('FULL');
-
-                              setActiveTab('processus'); 
-                            }}
-                            className="w-full text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 py-2 rounded-lg font-bold flex items-center justify-center transition-colors shadow-sm"
-                          >
-                            <Activity className="w-3.5 h-3.5 mr-1.5" /> Suivi & Tableau PTBA
-                          </button>
                         </div>
                       );
                     })}
                   </div>
-
                 </div>
-              );})}
+
+                {/* X-axis Project Labels */}
+                <div className="flex pl-4 sm:pl-6 pt-1 sm:pt-2 justify-around gap-1 sm:gap-2">
+                  {projectChartData.map(proj => (
+                    <div
+                      key={proj.id}
+                      className="text-center text-[8.5px] sm:text-[11px] font-medium text-slate-600 dark:text-slate-300 max-w-[140px] flex-1 leading-tight line-clamp-2"
+                      title={proj.name}
+                    >
+                      {proj.name}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Chart 2 (1/3 width): Répartition par Statut (Donut Chart) */}
+          <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-slate-800 p-2.5 sm:p-5 shadow-sm flex flex-col justify-between">
+            <h3 className="text-[11px] sm:text-base font-extrabold text-slate-800 dark:text-white mb-1 sm:mb-2 flex items-center gap-1.5 sm:gap-2">
+              <TrendingUp className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-600 dark:text-[#90D5FF] shrink-0" />
+              <span>
+                {language === 'EN' ? 'Breakdown by Status' : 'Répartition par Statut'}
+              </span>
+            </h3>
+
+            {/* SVG Donut Chart */}
+            <div className="flex flex-col items-center justify-center my-1 sm:my-2">
+              <div className="relative w-28 h-28 sm:w-44 sm:h-44 flex items-center justify-center">
+                <svg
+                  className="w-28 h-28 sm:w-44 sm:h-44 -rotate-90"
+                  viewBox="0 0 160 160"
+                >
+                  {totalActiveOps === 0 ? (
+                    <circle
+                      cx="80"
+                      cy="80"
+                      r={donutRadius}
+                      fill="transparent"
+                      stroke="#e2e8f0"
+                      strokeWidth="22"
+                    />
+                  ) : (
+                    donutSegments.map(seg => {
+                      if (seg.count <= 0) return null;
+                      const fraction = seg.count / totalActiveOps;
+                      const dashLength = Math.max(
+                        0,
+                        fraction * donutCircumference - 2
+                      );
+                      const dashOffset =
+                        -cumulativeFraction * donutCircumference;
+                      cumulativeFraction += fraction;
+
+                      return (
+                        <circle
+                          key={seg.label}
+                          cx="80"
+                          cy="80"
+                          r={donutRadius}
+                          fill="transparent"
+                          stroke={seg.color}
+                          strokeWidth="22"
+                          strokeDasharray={`${dashLength} ${donutCircumference}`}
+                          strokeDashoffset={dashOffset}
+                        >
+                          <title>{`${seg.label}: ${seg.count}`}</title>
+                        </circle>
+                      );
+                    })
+                  )}
+                </svg>
+              </div>
+
+              {/* Donut Legend */}
+              <div className="flex flex-wrap items-center justify-center gap-x-2.5 sm:gap-x-4 gap-y-1 text-[8.5px] sm:text-xs font-medium mt-2 sm:mt-3">
+                <span className="inline-flex items-center gap-1 text-[#ef4444]">
+                  <span className="w-2 h-2 sm:w-3 sm:h-3 rounded-xs bg-[#ef4444] inline-block" />
+                  {language === 'EN' ? 'Blocked' : 'Bloquées'}
+                </span>
+                <span className="inline-flex items-center gap-1 text-[#0ea5e9]">
+                  <span className="w-2 h-2 sm:w-3 sm:h-3 rounded-xs bg-[#0ea5e9] inline-block" />
+                  {language === 'EN' ? 'In Progress' : 'En cours'}
+                </span>
+                <span className="inline-flex items-center gap-1 text-[#10b981]">
+                  <span className="w-2 h-2 sm:w-3 sm:h-3 rounded-xs bg-[#10b981] inline-block" />
+                  {language === 'EN' ? 'Completed' : 'Terminées'}
+                </span>
+                <span className="inline-flex items-center gap-1 text-[#94a3b8]">
+                  <span className="w-2 h-2 sm:w-3 sm:h-3 rounded-xs bg-[#94a3b8] inline-block" />
+                  {language === 'EN' ? 'To Do' : 'À faire'}
+                </span>
+              </div>
             </div>
 
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-
-  const renderPTBA = () => {
-    let allAxes: (Axe & { isReadOnly?: boolean })[] = [];
-    data.forEach(d => { 
-      if (filterPTBADossier === 'FULL' || d.id === filterPTBADossier) {
-        if (d.axes) d.axes.forEach(a => allAxes.push({...a, isReadOnly: d.isReadOnly}));
-      }
-    });
-
-    if (filterPTBAAxe !== 'FULL') {
-      allAxes = allAxes.filter(a => a.id === filterPTBAAxe);
-    }
-
-    const isAllYears = filterPTBAYear === 'ALL';
-    let globalTotalVP = 0; let globalTotalYear = 0;
-    let globalTotalQ1 = 0, globalTotalQ2 = 0, globalTotalQ3 = 0, globalTotalQ4 = 0;
-    let globalTotalY25 = 0, globalTotalY26 = 0, globalTotalY27 = 0;
-
-    return (
-      <div className="animate-in fade-in duration-500 pb-10 flex flex-col h-full">
-        <div className="flex justify-between items-center border-b pb-2 border-emerald-200 shrink-0 mb-4">
-          <div>
-            <h2 className="text-xl font-bold text-gray-800 flex items-center">
-              <FileSpreadsheet className="w-6 h-6 mr-2 text-emerald-600" /> 
-              PTBA - {isAllYears ? 'Période Globale' : `Exercice ${filterPTBAYear}`}
-            </h2>
-            <p className="text-xs text-gray-500 mt-0.5">Plan de Travail et Budget Annuel - Ventilation trimestrielle et pluriannuelle</p>
+            {/* Footer Total */}
+            <div className="pt-2 sm:pt-3 border-t border-slate-100 dark:border-slate-800 text-center text-[9.5px] sm:text-xs text-slate-500 dark:text-slate-400">
+              {language === 'EN'
+                ? 'Total active operations:'
+                : 'Total des opérations actives :'}{' '}
+              <strong className="text-slate-900 dark:text-white font-black">
+                {totalActiveOps}
+              </strong>
+            </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-4 shrink-0">
-          <div className="flex-1">
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center">
-              <Calendar className="w-3 h-3 mr-1" /> 1. Année d'Exercice
-            </label>
-            <div className="relative">
-              <select className="w-full appearance-none bg-slate-50 border border-slate-300 text-slate-800 text-sm font-medium rounded-lg p-2.5 pr-8 outline-none cursor-pointer"
-                value={filterPTBAYear} onChange={(e) => { setFilterPTBAYear(e.target.value); if (e.target.value === 'ALL') setFilterPTBAQuarter('FULL'); }}>
-                <option value="ALL">Période Globale</option>
-                <option value="2024">Année 2024</option><option value="2025">Année 2025</option><option value="2026">Année 2026</option><option value="2027">Année 2027</option>
-              </select>
-              <ChevronRight className="w-4 h-4 text-slate-400 absolute right-3 top-3 rotate-90 pointer-events-none" />
+        {/* BOTTLENECKS & ALERTS SECTION (BELOW THE 2 CHARTS) */}
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm">
+          <h3 className="text-xs sm:text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-500" />
+            {language === 'EN'
+              ? `Bottlenecks & Variance Alerts (${delayedRows.length})`
+              : `Goulots d’étranglement & Alertes d’Écarts (${delayedRows.length})`}
+          </h3>
+          {delayedRows.length === 0 ? (
+            <div className="p-4 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              {language === 'EN'
+                ? 'No bottleneck or critical variance detected on active tasks.'
+                : 'Aucun goulot d’étranglement ni écart critique détecté sur les tâches actives.'}
             </div>
-          </div>
-          <div className="flex-1">
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center">
-              <Filter className="w-3 h-3 mr-1" /> 2. Composante
-            </label>
-            <div className="relative">
-              <select className="w-full appearance-none bg-slate-50 border border-slate-300 text-slate-800 text-sm font-medium rounded-lg p-2.5 pr-8 outline-none cursor-pointer"
-                value={filterPTBAAxe} onChange={(e) => { setFilterPTBAAxe(e.target.value); setFilterPTBAProj('FULL'); }}>
-                <option value="FULL">Toutes les composantes</option>
-                {data.filter(d => filterPTBADossier === 'FULL' || d.id === filterPTBADossier).map(dossier => dossier.axes?.map(axe => (
-                  <option key={axe.id} value={axe.id}>{axe.name}</option>
-                )))}
-              </select>
-              <ChevronRight className="w-4 h-4 text-slate-400 absolute right-3 top-3 rotate-90 pointer-events-none" />
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+              {delayedRows.map(r => (
+                <div
+                  key={r.task.id}
+                  className="p-3 rounded-lg bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 flex items-start justify-between gap-3"
+                >
+                  <div>
+                    <div className="text-xs font-black text-slate-900 dark:text-white">
+                      <span className="font-mono text-[#0c4a6e] dark:text-[#90D5FF] mr-1.5">
+                        [{r.code}]
+                      </span>
+                      {r.task.name}
+                    </div>
+                    <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
+                      {language === 'EN' ? 'Owner:' : 'Responsable :'}{' '}
+                      <strong>{r.task.assignee}</strong> •{' '}
+                      {language === 'EN' ? 'Planned end:' : 'Fin prévue :'}{' '}
+                      {r.task.endDate}
+                    </div>
+                  </div>
+                  <span className="px-2 py-0.5 rounded bg-amber-500 text-slate-950 text-[10px] font-black shrink-0">
+                    {r.metrics.effectiveStatus === 'Bloqué'
+                      ? language === 'EN'
+                        ? 'BLOCKED'
+                        : 'BLOQUÉ'
+                      : r.metrics.ecartFinLabel}
+                  </span>
+                </div>
+              ))}
             </div>
-          </div>
-          <div className="flex-1">
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center">
-              <FolderTree className="w-3 h-3 mr-1" /> 3. Projet
-            </label>
-            <div className="relative">
-              <select className="w-full appearance-none bg-slate-50 border border-slate-300 text-slate-800 text-sm font-medium rounded-lg p-2.5 pr-8 outline-none cursor-pointer"
-                value={filterPTBAProj} onChange={(e) => setFilterPTBAProj(e.target.value)}>
-                <option value="FULL">Tous les projets</option>
-                {ptbaAvailableProjects.map((proj, index) => (
-                  <option key={proj.id} value={proj.id} className="truncate">{index + 1}. {proj.name.substring(0, 50)}...</option>
-                ))}
-              </select>
-              <ChevronRight className="w-4 h-4 text-slate-400 absolute right-3 top-3 rotate-90 pointer-events-none" />
-            </div>
-          </div>
-          <div className="flex-1">
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center">
-              <Activity className="w-3 h-3 mr-1" /> 4. Trimestre
-            </label>
-            <div className="relative">
-              <select className={`w-full appearance-none bg-slate-50 border border-slate-300 text-slate-800 text-sm font-medium rounded-lg p-2.5 pr-8 outline-none cursor-pointer ${isAllYears ? 'opacity-50 cursor-not-allowed' : ''}`}
-                value={filterPTBAQuarter} onChange={(e) => setFilterPTBAQuarter(e.target.value)} disabled={isAllYears}>
-                <option value="FULL">Année entière</option>
-                <option value="T1">Trimestre 1 (Jan-Mar)</option><option value="T2">Trimestre 2 (Avr-Juin)</option>
-                <option value="T3">Trimestre 3 (Juil-Sep)</option><option value="T4">Trimestre 4 (Oct-Déc)</option>
-              </select>
-              <ChevronRight className="w-4 h-4 text-slate-400 absolute right-3 top-3 rotate-90 pointer-events-none" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col overflow-hidden mb-6 flex-1">
-          <div className="overflow-x-auto relative max-h-[600px] hide-scrollbar flex-1">
-            <table className="w-full text-left text-sm whitespace-nowrap">
-              <thead className="bg-slate-800 text-white text-xs shadow-md sticky top-0 z-40">
-                <tr>
-                  <th className="px-4 py-3 border-b border-slate-700 border-r sticky left-0 bg-slate-800 z-50 w-[280px] min-w-[280px] max-w-[280px] whitespace-normal">Composante / Projet / Tâche</th>
-                  <th className="px-4 py-3 border-b border-slate-700 border-r text-center">Période</th>
-                  <th className="px-4 py-3 border-b border-slate-700 border-r text-center">Responsable / Labo / Station</th>
-                  <th className="px-4 py-3 border-b border-slate-700 border-r text-center bg-emerald-900/50 text-emerald-100">Budget (VP)</th>
-                  {isAllYears ? (
-                    <>
-                      <th className="px-4 py-3 border-b border-slate-700 text-center border-r">Année 2025</th>
-                      <th className="px-4 py-3 border-b border-slate-700 text-center border-r">Année 2026</th>
-                      <th className="px-4 py-3 border-b border-slate-700 text-center">Année 2027</th>
-                    </>
-                  ) : (
-                    <>
-                      <th className="px-4 py-3 border-b border-slate-700 border-r text-center bg-blue-900/50 text-blue-100">Prog. {filterPTBAYear}</th>
-                      <th className="px-4 py-3 border-b border-slate-700 text-center border-r">T1</th>
-                      <th className="px-4 py-3 border-b border-slate-700 text-center border-r">T2</th>
-                      <th className="px-4 py-3 border-b border-slate-700 text-center border-r">T3</th>
-                      <th className="px-4 py-3 border-b border-slate-700 text-center">T4</th>
-                    </>
-                  )}
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-100">
-                {allAxes.length === 0 && (
-                  <tr>
-                    <td colSpan={isAllYears ? 7 : 9} className="text-center py-10 text-gray-400 italic">
-                      Aucun programme ou composante à afficher. Rendez-vous dans "Programmes Stratégiques" pour configurer votre projet.
-                    </td>
-                  </tr>
-                )}
-                {allAxes.map(axe => {
-                  let axeProjects = axe.projects || [];
-                  if (filterPTBAProj !== 'FULL') axeProjects = axeProjects.filter(p => p.id === filterPTBAProj);
-                  if (axeProjects.length === 0) return null;
-
-                  return (
-                    <React.Fragment key={axe.id}>
-                      <tr className="bg-slate-700">
-                        <td colSpan={isAllYears ? 7 : 9} className="px-4 py-2 font-bold text-emerald-400 text-xs uppercase tracking-widest sticky left-0 z-30">
-                          {axe.name}
-                        </td>
-                      </tr>
-                      {axeProjects.map(proj => {
-                        const sortedProjTasks = [...(proj.tasks || [])].sort((a, b) => {
-                          const phaseA = a.phase ? STANDARD_PHASES.indexOf(a.phase) : 0;
-                          const phaseB = b.phase ? STANDARD_PHASES.indexOf(b.phase) : 0;
-                          if (phaseA !== phaseB) return phaseA - phaseB;
-                          return new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
-                        });
-
-                        let tasksInYear = sortedProjTasks.filter(t => {
-                          const startYear = t.startDate ? new Date(t.startDate).getFullYear().toString() : '9999';
-                          const endYear = t.endDate ? new Date(t.endDate).getFullYear().toString() : '0000';
-                          if (isAllYears) return endYear >= '2025' && startYear <= '2027';
-                          return startYear <= filterPTBAYear && endYear >= filterPTBAYear;
-                        });
-
-                        if (!isAllYears && filterPTBAQuarter !== 'FULL') {
-                          tasksInYear = tasksInYear.filter(t => {
-                            if (filterPTBAQuarter === 'T1') return getQuarterOverlapDays(t.startDate, t.endDate, filterPTBAYear, 0) > 0;
-                            if (filterPTBAQuarter === 'T2') return getQuarterOverlapDays(t.startDate, t.endDate, filterPTBAYear, 1) > 0;
-                            if (filterPTBAQuarter === 'T3') return getQuarterOverlapDays(t.startDate, t.endDate, filterPTBAYear, 2) > 0;
-                            if (filterPTBAQuarter === 'T4') return getQuarterOverlapDays(t.startDate, t.endDate, filterPTBAYear, 3) > 0;
-                            return true;
-                          });
-                        }
-
-                        if (tasksInYear.length === 0) return null;
-                        
-                        let projTotalVP = 0; let projYear = 0;
-                        let projQ1 = 0, projQ2 = 0, projQ3 = 0, projQ4 = 0;
-                        let projY25 = 0, projY26 = 0, projY27 = 0;
-
-                        const processedTasks = tasksInYear.map(t => {
-                          const vp = Number(t.coutPlanifie) || 0;
-                          const taskIndexInProject = sortedProjTasks.findIndex(pt => pt.id === t.id) + 1;
-                          const [sYear, sMonth, sDay] = t.startDate.split('-').map(Number);
-                          const [eYear, eMonth, eDay] = t.endDate.split('-').map(Number);
-                          const start = new Date(sYear, sMonth - 1, sDay).getTime();
-                          const end = new Date(eYear, eMonth - 1, eDay).getTime();
-                          const totalDays = Math.max(1, (end - start) / (1000 * 60 * 60 * 24) + 1);
-
-                          let q1B = 0, q2B = 0, q3B = 0, q4B = 0, yearB = 0;
-                          let y25B = 0, y26B = 0, y27B = 0;
-
-                          if (isAllYears) {
-                            y25B = vp * (getYearOverlapDays(t.startDate, t.endDate, '2025') / totalDays);
-                            y26B = vp * (getYearOverlapDays(t.startDate, t.endDate, '2026') / totalDays);
-                            y27B = vp * (getYearOverlapDays(t.startDate, t.endDate, '2027') / totalDays);
-                          } else {
-                            q1B = (vp * (getQuarterOverlapDays(t.startDate, t.endDate, filterPTBAYear, 0) / totalDays));
-                            q2B = (vp * (getQuarterOverlapDays(t.startDate, t.endDate, filterPTBAYear, 1) / totalDays));
-                            q3B = (vp * (getQuarterOverlapDays(t.startDate, t.endDate, filterPTBAYear, 2) / totalDays));
-                            q4B = (vp * (getQuarterOverlapDays(t.startDate, t.endDate, filterPTBAYear, 3) / totalDays));
-                            yearB = q1B + q2B + q3B + q4B;
-                          }
-
-                          projTotalVP += vp; projYear += yearB;
-                          projQ1 += q1B; projQ2 += q2B; projQ3 += q3B; projQ4 += q4B;
-                          projY25 += y25B; projY26 += y26B; projY27 += y27B;
-
-                          return { ...t, number: taskIndexInProject, vp, yearB, q1B, q2B, q3B, q4B, y25B, y26B, y27B };
-                        });
-
-                        globalTotalVP += projTotalVP; globalTotalYear += projYear;
-                        globalTotalQ1 += projQ1; globalTotalQ2 += projQ2; globalTotalQ3 += projQ3; globalTotalQ4 += projQ4;
-                        globalTotalY25 += projY25; globalTotalY26 += projY26; globalTotalY27 += projY27;
-
-                        return (
-                          <React.Fragment key={proj.id}>
-                            <tr className="bg-slate-200 border-b border-slate-300">
-                              <td className="px-4 py-2 font-bold text-slate-800 text-sm sticky left-0 bg-slate-200 z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] w-[280px] min-w-[280px] max-w-[280px] whitespace-normal">
-                                <div className="flex items-start">
-                                  <FolderTree className="w-4 h-4 mr-2 text-slate-500 mt-0.5 shrink-0" />
-                                  <span>{proj.name}</span>
-                                </div>
-                              </td>
-                              <td className="px-4 py-2 text-center text-slate-500 font-medium">-</td>
-                              <td className="px-4 py-2 text-center text-slate-500 font-medium">-</td>
-                              <td className="px-4 py-2 text-center font-bold text-emerald-800 bg-emerald-100/50 border-x border-slate-300">{fmtBudget(projTotalVP)} M</td>
-                              {isAllYears ? (
-                                <>
-                                  <td className="px-4 py-1 text-center font-bold text-slate-700 border-r border-slate-300">{fmtBudget(projY25)} M</td>
-                                  <td className="px-4 py-1 text-center font-bold text-slate-700 border-r border-slate-300">{fmtBudget(projY26)} M</td>
-                                  <td className="px-4 py-1 text-center font-bold text-slate-700">{fmtBudget(projY27)} M</td>
-                                </>
-                              ) : (
-                                <>
-                                  <td className="px-4 py-1 text-center font-bold text-blue-800 bg-blue-100/50 border-r border-slate-300">{fmtBudget(projYear)} M</td>
-                                  <td className="px-4 py-2 text-center font-bold text-slate-700 border-r border-slate-300">{fmtBudget(projQ1)} M</td>
-                                  <td className="px-4 py-2 text-center font-bold text-slate-700 border-r border-slate-300">{fmtBudget(projQ2)} M</td>
-                                  <td className="px-4 py-2 text-center font-bold text-slate-700 border-r border-slate-300">{fmtBudget(projQ3)} M</td>
-                                  <td className="px-4 py-2 text-center font-bold text-slate-700">{fmtBudget(projQ4)} M</td>
-                                </>
-                              )}
-                            </tr>
-                            
-                            {processedTasks.map((t) => (
-                              <tr key={t.id} className="group hover:bg-slate-50 transition-colors border-b border-gray-100 text-xs">
-                                <td className="px-5 py-3 font-medium text-slate-700 border-r border-gray-200 sticky left-0 bg-white group-hover:bg-slate-50 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] whitespace-normal w-[280px] min-w-[280px] max-w-[280px]">
-                                  <div className="flex items-start">
-                                    <div className={`w-10 shrink-0 flex items-center font-bold text-[10px] mt-0.5 ${t.type === 'jalon' ? 'text-orange-500' : 'text-blue-500'}`}>
-                                      {t.type === 'tache' ? `T${t.number}` : `J${t.number}`}
-                                      {t.type === 'jalon' && <Diamond className="w-3 h-3 fill-current ml-0.5" />}
-                                    </div>
-                                    <span className="leading-tight text-[11px] text-slate-800">{t.name}</span>
-                                  </div>
-                                </td>
-                                <td className="px-4 py-3 text-center border-r border-gray-200 text-slate-500 font-medium whitespace-nowrap text-[10px]">
-                                  {new Date(t.startDate).toLocaleDateString('fr-FR', {day:'2-digit', month:'2-digit'})} - {new Date(t.endDate).toLocaleDateString('fr-FR', {day:'2-digit', month:'2-digit', year:'2-digit'})}
-                                </td>
-                                <td className="px-4 py-3 text-center border-r border-gray-200 text-slate-600 font-medium">{t.assignee}</td>
-                                <td className="px-4 py-3 text-center text-emerald-700 border-r border-gray-200 bg-emerald-50/20">{t.vp > 0 ? `${t.vp} M` : '-'}</td>
-                                {isAllYears ? (
-                                  <>
-                                    <td className={`px-2 py-3 border-r border-gray-200 text-center font-medium ${t.y25B > 0 ? 'bg-slate-50 text-slate-700' : 'text-gray-300'}`}>{t.y25B > 0 ? `${fmtBudget(t.y25B)} M` : '-'}</td>
-                                    <td className={`px-2 py-3 border-r border-gray-200 text-center font-medium ${t.y26B > 0 ? 'bg-slate-50 text-slate-700' : 'text-gray-300'}`}>{t.y26B > 0 ? `${fmtBudget(t.y26B)} M` : '-'}</td>
-                                    <td className={`px-2 py-3 text-center font-medium ${t.y27B > 0 ? 'bg-slate-50 text-slate-700' : 'text-gray-300'}`}>{t.y27B > 0 ? `${fmtBudget(t.y27B)} M` : '-'}</td>
-                                  </>
-                                ) : (
-                                  <>
-                                    <td className="px-4 py-3 text-center font-bold text-blue-700 border-r border-gray-200 bg-blue-50/20">{fmtBudget(t.yearB)} {t.yearB > 0 ? 'M' : ''}</td>
-                                    <td className={`px-2 py-3 border-r border-gray-200 text-center font-medium ${t.q1B > 0 ? 'bg-emerald-50 text-emerald-700' : 'text-gray-300'}`}>{t.q1B > 0 ? `${fmtBudget(t.q1B)} M` : '-'}</td>
-                                    <td className={`px-2 py-3 border-r border-gray-200 text-center font-medium ${t.q2B > 0 ? 'bg-emerald-50 text-emerald-700' : 'text-gray-300'}`}>{t.q2B > 0 ? `${fmtBudget(t.q2B)} M` : '-'}</td>
-                                    <td className={`px-2 py-3 border-r border-gray-200 text-center font-medium ${t.q3B > 0 ? 'bg-emerald-50 text-emerald-700' : 'text-gray-300'}`}>{t.q3B > 0 ? `${fmtBudget(t.q3B)} M` : '-'}</td>
-                                    <td className={`px-2 py-3 text-center font-medium ${t.q4B > 0 ? 'bg-emerald-50 text-emerald-700' : 'text-gray-300'}`}>{t.q4B > 0 ? `${fmtBudget(t.q4B)} M` : '-'}</td>
-                                  </>
-                                )}
-                              </tr>
-                            ))}
-                          </React.Fragment>
-                        );
-                      })}
-                    </React.Fragment>
-                  );
-                })}
-              </tbody>
-              <tfoot className="bg-slate-800 text-white font-bold sticky bottom-0 z-40">
-                <tr>
-                  <td colSpan={3} className="px-4 py-3 text-right uppercase text-xs">Total Global Programmé ({isAllYears ? '2025-2027' : filterPTBAYear})</td>
-                  <td className="px-4 py-3 text-center text-emerald-300 border-r border-slate-700">{fmtBudget(globalTotalVP)} M</td>
-                  {isAllYears ? (
-                    <>
-                      <td className="px-4 py-3 text-center text-emerald-300 border-r border-slate-700">{fmtBudget(globalTotalY25)} M</td>
-                      <td className="px-4 py-3 text-center text-emerald-300 border-r border-slate-700">{fmtBudget(globalTotalY26)} M</td>
-                      <td className="px-4 py-3 text-center text-emerald-300">{fmtBudget(globalTotalY27)} M</td>
-                    </>
-                  ) : (
-                    <>
-                      <td className="px-4 py-3 text-center text-blue-300 border-r border-slate-700">{fmtBudget(globalTotalYear)} M</td>
-                      <td className="px-4 py-3 text-center text-emerald-300 border-r border-slate-700">{fmtBudget(globalTotalQ1)} M</td>
-                      <td className="px-4 py-3 text-center text-emerald-300 border-r border-slate-700">{fmtBudget(globalTotalQ2)} M</td>
-                      <td className="px-4 py-3 text-center text-emerald-300 border-r border-slate-700">{fmtBudget(globalTotalQ3)} M</td>
-                      <td className="px-4 py-3 text-center text-emerald-300">{fmtBudget(globalTotalQ4)} M</td>
-                    </>
-                  )}
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+          )}
         </div>
       </div>
     );
   };
 
-  const renderProcessus = () => {
-    let filteredProjects = allProjects;
-    if (filterProcessusDossier !== 'FULL') filteredProjects = filteredProjects.filter(p => p.dossierId === filterProcessusDossier);
-    if (filterProcessusAxe !== 'FULL') filteredProjects = filteredProjects.filter(p => p.axeId === filterProcessusAxe);
-    if (filterProcessusProj !== 'FULL') filteredProjects = filteredProjects.filter(p => p.id === filterProcessusProj);
-    
-    const today = new Date();
+  // ============================================================================
+  // VIEW: RÉSEAU PERT (Zoom out down to 10% = 0.10!)
+  // ============================================================================
+  const renderPertView = () => {
+    const pertSummaries = computeDossierPertSummary(activeDossier, todayISO).filter(
+      ps => filterProjectId === 'ALL' || ps.projectId === filterProjectId
+    );
+    const allNodes = pertSummaries.flatMap(p => p.nodes);
 
-    const evmData = filteredProjects.map(proj => {
-      let vp = 0; let va = 0; let cr = 0;
-      if(proj.tasks) {
-        proj.tasks.forEach(t => {
-          let keep = true;
-          if (filterProcessusYear !== 'ALL') {
-            const startYear = t.startDate ? new Date(t.startDate).getFullYear().toString() : '9999';
-            const endYear = t.endDate ? new Date(t.endDate).getFullYear().toString() : '0000';
-            if (!(startYear <= filterProcessusYear && endYear >= filterProcessusYear)) keep = false;
-            if (keep && filterProcessusQuarter !== 'FULL') {
-              let qOverlap = 0;
-              if (filterProcessusQuarter === 'T1') qOverlap = getQuarterOverlapDays(t.startDate, t.endDate, filterProcessusYear, 0);
-              else if (filterProcessusQuarter === 'T2') qOverlap = getQuarterOverlapDays(t.startDate, t.endDate, filterProcessusYear, 1);
-              else if (filterProcessusQuarter === 'T3') qOverlap = getQuarterOverlapDays(t.startDate, t.endDate, filterProcessusYear, 2);
-              else if (filterProcessusQuarter === 'T4') qOverlap = getQuarterOverlapDays(t.startDate, t.endDate, filterProcessusYear, 3);
-              if (qOverlap <= 0) keep = false;
-            }
-          }
-          if (!keep) return;
-
-          const coutPlanifie = Number(t.coutPlanifie) || 0;
-          const coutReel = Number(t.coutReel) || 0;
-          const valeurAcquise = t.valeurAcquise !== undefined ? Number(t.valeurAcquise) : ((t.status === 'Terminé' || t.valideVA) ? coutPlanifie : 0);
-
-          vp += coutPlanifie; cr += coutReel; va += valeurAcquise;
-        });
-      }
-      return { id: proj.id, name: proj.name, vp, va, cr, ec: va - cr, ed: va - vp, ipc: cr > 0 ? (va / cr).toFixed(2) : (va > 0 ? '' : '1.00'), ipd: vp > 0 ? (va / vp).toFixed(2) : (va > 0 ? '' : '1.00') };
+    // Group nodes by level for SVG layout
+    const levelsMap = new Map<number, typeof allNodes>();
+    allNodes.forEach(n => {
+      const list = levelsMap.get(n.level) || [];
+      list.push(n);
+      levelsMap.set(n.level, list);
     });
-    
-    const totalVP = evmData.reduce((s, p) => s + p.vp, 0);
-    const totalVA = evmData.reduce((s, p) => s + p.va, 0);
-    const totalCR = evmData.reduce((s, p) => s + p.cr, 0);
+    const maxLevel = Math.max(0, ...Array.from(levelsMap.keys()));
+    const maxNodesInLevel = Math.max(
+      1,
+      ...Array.from(levelsMap.values()).map(l => l.length)
+    );
 
-    const enrichedProjects = filteredProjects.map(project => {
-      const groups = STANDARD_PHASES.map(phaseName => {
-        const items = Array.isArray(project.tasks) ? project.tasks.filter(t => {
-          if (t.phase !== phaseName) return false;
-          if (filterProcessusYear !== 'ALL') {
-            const startYear = t.startDate ? new Date(t.startDate).getFullYear().toString() : '9999';
-            const endYear = t.endDate ? new Date(t.endDate).getFullYear().toString() : '0000';
-            if (!(startYear <= filterProcessusYear && endYear >= filterProcessusYear)) return false;
-            if (filterProcessusQuarter !== 'FULL') {
-              let qOverlap = 0;
-              if (filterProcessusQuarter === 'T1') qOverlap = getQuarterOverlapDays(t.startDate, t.endDate, filterProcessusYear, 0);
-              else if (filterProcessusQuarter === 'T2') qOverlap = getQuarterOverlapDays(t.startDate, t.endDate, filterProcessusYear, 1);
-              else if (filterProcessusQuarter === 'T3') qOverlap = getQuarterOverlapDays(t.startDate, t.endDate, filterProcessusYear, 2);
-              else if (filterProcessusQuarter === 'T4') qOverlap = getQuarterOverlapDays(t.startDate, t.endDate, filterProcessusYear, 3);
-              if (qOverlap <= 0) return false;
-            }
-          }
-          return true;
-        }).sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime()).map((t, idx) => {
-          const startD = new Date(t.startDate); const endD = new Date(t.endDate);
-          const duration = Math.max(1, Math.ceil((endD.getTime() - startD.getTime()) / (1000 * 60 * 60 * 24))) || 1;
+    const colWidth = 250;
+    const rowHeight = 130;
+    const svgWidth = Math.max(820, (maxLevel + 1) * colWidth + 120);
+    const svgHeight = Math.max(420, maxNodesInLevel * rowHeight + 100);
 
-          const vp = Number(t.coutPlanifie) || 0;
-          const cr = Number(t.coutReel) || 0;
-          const va = t.valeurAcquise !== undefined ? Number(t.valeurAcquise) : ((t.status === 'Terminé' || t.valideVA) ? vp : 0);
-          const avancement = vp > 0 ? Math.round((va / vp) * 100) : (va > 0 ? 100 : 0);
-
-          let statutDecaissement = "-"; let statutColorDecaissement = "text-gray-400 bg-gray-50 border-gray-200";
-          let ecartPlanningDecaissementVal = null;
-
-          if (t.dateDecaissementReel && t.dateDecaissementPrevu) {
-             const diffDays = Math.ceil((new Date(t.dateDecaissementReel).getTime() - new Date(t.dateDecaissementPrevu).getTime()) / (1000 * 60 * 60 * 24));
-             ecartPlanningDecaissementVal = diffDays;
-             if (diffDays > 0) { statutDecaissement = `Retard ${diffDays} j`; statutColorDecaissement = "text-red-700 bg-red-100"; } 
-             else if (diffDays < 0) { statutDecaissement = `Avance ${Math.abs(diffDays)} j`; statutColorDecaissement = "text-emerald-700 bg-emerald-100"; } 
-             else { statutDecaissement = `Respecté`; statutColorDecaissement = "text-blue-700 bg-blue-100"; }
-          } else if (t.dateDecaissementPrevu) {
-             const diffDays = Math.ceil((today.getTime() - new Date(t.dateDecaissementPrevu).getTime()) / (1000 * 60 * 60 * 24));
-             ecartPlanningDecaissementVal = diffDays;
-             if (diffDays > 0) { statutDecaissement = `Retard ${diffDays} j`; statutColorDecaissement = "text-red-700 bg-red-100"; } 
-             else { statutDecaissement = `En attente`; statutColorDecaissement = "text-gray-500 bg-gray-100"; }
-          }
-          
-          const hasPassedPrevu = t.dateDecaissementPrevu ? (new Date(t.dateDecaissementPrevu) <= today) : (new Date(t.endDate) <= today);
-          let decaissementPrevuADate = 0;
-          if (hasPassedPrevu) decaissementPrevuADate = (t.montantDecaissementPrevu !== undefined && t.montantDecaissementPrevu !== '') ? Number(t.montantDecaissementPrevu) : vp;
-          const decaisse = t.montantDecaissementReel !== undefined && t.montantDecaissementReel !== '' ? Number(t.montantDecaissementReel) : cr;
-          const tauxRespectDecaissementVal = decaissementPrevuADate > 0 ? Math.round((decaisse / decaissementPrevuADate) * 100) : (decaisse > 0 ? 100 : 0);
-
-          return { 
-            ...t, number: idx + 1, duration: duration + 'j', 
-            debutPrevuStr: startD.toLocaleDateString('fr-FR', {day: '2-digit', month: '2-digit', year: '2-digit'}), 
-            finPrevueStr: endD.toLocaleDateString('fr-FR', {day: '2-digit', month: '2-digit', year: '2-digit'}),
-            dateDecaissementPrevuStr: t.dateDecaissementPrevu ? new Date(t.dateDecaissementPrevu).toLocaleDateString('fr-FR', {day: '2-digit', month: '2-digit', year: '2-digit'}) : '-',
-            dateDecaissementReelStr: t.dateDecaissementReel ? new Date(t.dateDecaissementReel).toLocaleDateString('fr-FR', {day: '2-digit', month: '2-digit', year: '2-digit'}) : '-',
-            vp, va, avancement, cr, ec: va - cr, ed: va - vp, ipc: cr > 0 ? (va / cr).toFixed(2) : (va > 0 ? '' : '1.00'), ipd: vp > 0 ? (va / vp).toFixed(2) : (va > 0 ? '' : '1.00'),
-            ecartPlanningDecaissementVal, tauxRespectDecaissementVal, decaissementPrevuADate, decaisse, statutDecaissement, statutColorDecaissement
-          };
-        }) : [];
-        return { phase: phaseName, items };
+    const nodePositions = new Map<string, { x: number; y: number }>();
+    Array.from(levelsMap.entries()).forEach(([lvl, nodes]) => {
+      nodes.forEach((node, idx) => {
+        const x = 60 + lvl * colWidth;
+        const y = 50 + idx * rowHeight;
+        nodePositions.set(node.id, { x, y });
       });
-      return { ...project, groups };
     });
 
     return (
-      <div className="animate-in fade-in duration-500 pb-10 flex flex-col h-full">
-        <div className="flex justify-between items-center border-b pb-1 border-emerald-200 shrink-0 mb-4">
+      <div className="space-y-4">
+        {renderMacroFilterBar()}
+
+        {/* PERT Controls Bar (Zoom down to 10% = 0.10) */}
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-3 shadow-sm flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-bold text-gray-800 flex items-center">
-              <Activity className="w-5 h-5 mr-2 text-emerald-600" /> Suivi Scientifique & Budgétaire (EVM)
+            <h2 className="text-sm sm:text-base font-black text-slate-900 dark:text-white uppercase tracking-tight flex items-center gap-2">
+              <Network className="w-4 h-4 text-[#0284c7] dark:text-[#90D5FF]" />
+              {language === 'EN'
+                ? 'PERT Network & Budget / Disbursement Critical Path'
+                : 'Réseau PERT — Pilotage par le Budget & le Décaissement'}
             </h2>
-            <p className="text-xs text-gray-500 mt-0.5">Suivi de la valeur acquise, planning et décaissements opérationnels</p>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              {language === 'EN'
+                ? 'Critical financial path, planned budget, disbursed amounts, and remaining balance to disburse'
+                : 'Chemin critique budgétaire, évolution des budgets prévus, montants décaissés et restes à décaisser'}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Switch Graph / Table */}
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
+              <button
+                onClick={() => setPertViewMode('graph')}
+                className={`px-3 py-1 rounded text-xs font-bold transition-all cursor-pointer ${
+                  pertViewMode === 'graph'
+                    ? 'bg-[#0c4a6e] text-white'
+                    : 'text-slate-600 dark:text-slate-300'
+                }`}
+              >
+                {language === 'EN' ? 'PERT Budget Graph' : 'Graphe PERT Budgétaire'}
+              </button>
+              <button
+                onClick={() => setPertViewMode('table')}
+                className={`px-3 py-1 rounded text-xs font-bold transition-all cursor-pointer ${
+                  pertViewMode === 'table'
+                    ? 'bg-[#0c4a6e] text-white'
+                    : 'text-slate-600 dark:text-slate-300'
+                }`}
+              >
+                {language === 'EN'
+                  ? 'Budget & Disbursement Chain Table'
+                  : 'Tableau PERT Budget & Décaissement'}
+              </button>
+            </div>
+
+            {/* Zoom Controls allowing down to 10% (0.10) */}
+            {pertViewMode === 'graph' && (
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-lg">
+                <button
+                  onClick={() =>
+                    setPertZoom(z => Math.max(0.1, Number((z - 0.1).toFixed(2))))
+                  }
+                  className="p-1 rounded hover:bg-white dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 cursor-pointer"
+                  title={
+                    language === 'EN' ? 'Zoom out down to 10%' : "Dézoomer jusqu'à 10%"
+                  }
+                >
+                  <ZoomOut className="w-3.5 h-3.5" />
+                </button>
+                <span className="text-[11px] font-black text-slate-800 dark:text-slate-200 min-w-[44px] text-center">
+                  {Math.round(pertZoom * 100)}%
+                </span>
+                <button
+                  onClick={() =>
+                    setPertZoom(z => Math.min(2.0, Number((z + 0.1).toFixed(2))))
+                  }
+                  className="p-1 rounded hover:bg-white dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 cursor-pointer"
+                  title={language === 'EN' ? 'Zoom in +' : 'Zoomer +'}
+                >
+                  <ZoomIn className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => setPertZoom(0.1)}
+                  className="px-1.5 py-0.5 rounded bg-sky-100 dark:bg-slate-700 text-[#0c4a6e] dark:text-[#90D5FF] text-[9px] font-black cursor-pointer"
+                  title={language === 'EN' ? 'Zoom out to 10%' : 'Dézoomer à 10%'}
+                >
+                  10%
+                </button>
+                <button
+                  onClick={() => setPertZoom(1)}
+                  className="p-1 rounded hover:bg-white dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 cursor-pointer"
+                  title={language === 'EN' ? 'Reset to 100%' : 'Réinitialiser à 100%'}
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-4 shrink-0">
-          <div className="flex-1">
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center">
-              <Calendar className="w-3 h-3 mr-1" /> 1. Année
-            </label>
-            <div className="relative">
-              <select className="w-full appearance-none bg-slate-50 border border-slate-300 text-slate-800 text-sm font-medium rounded-lg p-2.5 pr-8 outline-none cursor-pointer"
-                value={filterProcessusYear} onChange={(e) => { setFilterProcessusYear(e.target.value); if (e.target.value === 'ALL') setFilterProcessusQuarter('FULL'); }}>
-                <option value="ALL">Période Globale</option><option value="2024">2024</option><option value="2025">2025</option><option value="2026">2026</option><option value="2027">2027</option>
-              </select>
-              <ChevronRight className="w-4 h-4 text-slate-400 absolute right-3 top-3 rotate-90 pointer-events-none" />
+        {/* Dynamic PERT Budget & Disbursement Interpretation Cards */}
+        <div className="space-y-3">
+          {pertSummaries.map(ps => (
+            <div
+              key={ps.projectId}
+              className="bg-sky-50/80 dark:bg-slate-900 rounded-xl border border-[#90D5FF] dark:border-sky-800 p-4 space-y-2"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-black uppercase tracking-wider text-[#0c4a6e] dark:text-[#90D5FF]">
+                  {ps.projectName} — Budget :{' '}
+                  {formatCurrency(ps.totalBudget, currency, language)} • Décaissé :{' '}
+                  {formatCurrency(ps.totalDecaisse, currency, language)} (
+                  {ps.tauxDecaissementGlobal}%) • Reste :{' '}
+                  {formatCurrency(ps.totalResteADecaisser, currency, language)}
+                </span>
+                <span className="px-2.5 py-0.5 rounded bg-[#0c4a6e] text-white text-[10px] font-black">
+                  {language === 'EN' ? 'Critical Budget Path:' : 'Chemin Critique Budgétaire :'}{' '}
+                  {ps.criticalPathCodes.join(' → ') || 'N/A'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-700 dark:text-slate-300">
+                {ps.interpretation.criticalPathSummary}
+              </p>
+              <p className="text-xs text-slate-600 dark:text-slate-400">
+                {ps.interpretation.slackSummary}
+              </p>
+              <p className="text-xs font-bold text-slate-900 dark:text-white">
+                {ps.interpretation.riskAndSteeringSummary}
+              </p>
             </div>
-          </div>
-          <div className="flex-1">
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center">
-              <Filter className="w-3 h-3 mr-1" /> 2. Composante
-            </label>
-            <div className="relative">
-              <select className="w-full appearance-none bg-slate-50 border border-slate-300 text-slate-800 text-sm font-medium rounded-lg p-2.5 pr-8 outline-none cursor-pointer"
-                value={filterProcessusAxe} onChange={(e) => { setFilterProcessusAxe(e.target.value); setFilterProcessusProj('FULL'); }}>
-                <option value="FULL">Toutes les composantes</option>
-                {data.filter(d => filterProcessusDossier === 'FULL' || d.id === filterProcessusDossier).map(dossier => dossier.axes?.map(axe => (
-                  <option key={axe.id} value={axe.id}>{axe.name}</option>
-                )))}
-              </select>
-              <ChevronRight className="w-4 h-4 text-slate-400 absolute right-3 top-3 rotate-90 pointer-events-none" />
-            </div>
-          </div>
-          <div className="flex-1">
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center">
-              <FolderTree className="w-3 h-3 mr-1" /> 3. Projet
-            </label>
-            <div className="relative">
-              <select className="w-full appearance-none bg-slate-50 border border-slate-300 text-slate-800 text-sm font-medium rounded-lg p-2.5 pr-8 outline-none cursor-pointer"
-                value={filterProcessusProj} onChange={(e) => setFilterProcessusProj(e.target.value)}>
-                <option value="FULL">Tous les projets</option>
-                {allProjects.filter(p => filterProcessusDossier === 'FULL' || p.dossierId === filterProcessusDossier).filter(p => filterProcessusAxe === 'FULL' || p.axeId === filterProcessusAxe).map((proj, index) => (
-                    <option key={proj.id} value={proj.id}>{index + 1}. {proj.name}</option>
-                ))}
-              </select>
-              <ChevronRight className="w-4 h-4 text-slate-400 absolute right-3 top-3 rotate-90 pointer-events-none" />
-            </div>
-          </div>
-          <div className="flex-1">
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center">
-              <Activity className="w-3 h-3 mr-1" /> 4. Trimestre
-            </label>
-            <div className="relative">
-              <select className={`w-full appearance-none bg-slate-50 border border-slate-300 text-slate-800 text-sm font-medium rounded-lg p-2.5 pr-8 outline-none cursor-pointer ${filterProcessusYear === 'ALL' ? 'opacity-50 cursor-not-allowed' : ''}`}
-                value={filterProcessusQuarter} onChange={(e) => setFilterProcessusQuarter(e.target.value)} disabled={filterProcessusYear === 'ALL'}>
-                <option value="FULL">Année entière</option>
-                <option value="T1">Trimestre 1</option><option value="T2">Trimestre 2</option><option value="T3">Trimestre 3</option><option value="T4">Trimestre 4</option>
-              </select>
-              <ChevronRight className="w-4 h-4 text-slate-400 absolute right-3 top-3 rotate-90 pointer-events-none" />
-            </div>
-          </div>
+          ))}
         </div>
 
-        <div className="flex-1 flex flex-col min-h-0 overflow-y-auto pr-2 pb-10">
-            <div className="animate-in fade-in duration-500 mb-6">
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex-1 flex flex-col overflow-hidden">
-                <div className="overflow-x-auto overflow-y-auto max-h-[600px] flex-1 hide-scrollbar">
-                  <table className="w-full text-left text-sm whitespace-nowrap">
-                    <thead className="bg-slate-800 text-white text-xs shadow-md sticky top-0 z-40">
-                      <tr>
-                        <th className="px-2 py-3 border-b border-slate-700 border-r sticky left-0 bg-slate-800 z-50 w-[90px] min-w-[90px] text-center" rowSpan={2}>Tâche/Jalon</th>
-                        <th className="px-3 py-3 border-b border-slate-700 border-r sticky left-[90px] bg-slate-800 z-50 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)] w-[180px] min-w-[180px] whitespace-normal" rowSpan={2}>Activité / Tâche</th>
-                        <th className="px-4 py-3 border-b border-slate-700 border-r text-center whitespace-normal w-[140px] max-w-[140px]" rowSpan={2}>Responsable</th>
-                        <th className="px-4 py-3 border-b border-slate-700 border-r text-center text-emerald-200" rowSpan={2}>État</th>
-                        
-                        <th className="px-3 py-1.5 font-bold text-center border-r border-slate-700 border-b text-indigo-200" colSpan={2}>Période d'Exécution</th>
-                        <th className="px-4 py-3 border-b border-slate-700 border-r text-center whitespace-normal w-[130px] max-w-[130px] text-pink-200" rowSpan={2}>Bailleur / Financement</th>
-                        <th className="px-3 py-1.5 font-bold text-center border-r border-slate-700 border-b text-purple-200" colSpan={2}>Décaissement Prévu</th>
-                        <th className="px-3 py-1.5 font-bold text-center border-r border-slate-700 border-b text-teal-200" colSpan={2}>Décaissement Effectué</th>
-                        <th className="px-3 py-1.5 font-bold text-center border-r border-slate-700 border-b text-yellow-200" rowSpan={2}>Statut Décaissement</th>
-                        
-                        <th className="px-3 py-1.5 font-bold text-center border-r border-slate-700 border-b text-blue-200">Valeur Prévue</th>
-                        <th className="px-3 py-1.5 font-bold text-center border-r border-slate-700 border-b text-green-200">Valeur Acquise</th>
-                        <th className="px-3 py-1.5 font-bold text-center border-r border-slate-700 border-b text-emerald-200">Progrès</th>
-                        <th className="px-3 py-1.5 font-bold text-center border-r border-slate-700 border-b text-orange-200">Coût Réel</th>
-                        <th className="px-3 py-1.5 font-bold text-center border-l border-slate-700 border-b bg-slate-800 sticky right-0 z-50 w-[70px]" rowSpan={2}>Actions</th>
-                      </tr>
-                      <tr className="bg-slate-700">
-                        <th className="px-3 py-1.5 text-center border-r border-slate-600 text-indigo-100">Début</th>
-                        <th className="px-3 py-1.5 text-center border-r border-slate-600 text-indigo-100">Fin</th>
-                        
-                        <th className="px-3 py-1.5 text-center border-r border-slate-600 text-purple-100">Période (Date)</th>
-                        <th className="px-3 py-1.5 text-center border-r border-slate-600 text-purple-100">Montant (M)</th>
-                        
-                        <th className="px-3 py-1.5 text-center border-r border-slate-600 text-teal-100">Période (Date)</th>
-                        <th className="px-3 py-1.5 text-center border-r border-slate-600 text-teal-100">Montant (M)</th>
-                        
-                        <th className="px-3 py-1.5 text-center border-r border-slate-600 text-blue-100">VP</th>
-                        <th className="px-3 py-1.5 text-center border-r border-slate-600 text-green-100">VA</th>
-                        <th className="px-3 py-1.5 text-center border-r border-slate-600 text-emerald-100">%</th>
-                        <th className="px-3 py-1.5 text-center border-r border-slate-600 text-orange-100">CR</th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-100 text-gray-700">
-                      {enrichedProjects.length === 0 && (
-                        <tr><td colSpan={25} className="text-center py-12 text-gray-400 italic">Aucun projet ne correspond à cette sélection.</td></tr>
+        {pertViewMode === 'graph' ? (
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm overflow-auto max-h-[70vh]">
+            <div
+              style={{
+                transform: `scale(${pertZoom})`,
+                transformOrigin: 'top left',
+                width: svgWidth * pertZoom,
+                height: svgHeight * pertZoom
+              }}
+            >
+              <svg width={svgWidth} height={svgHeight} className="overflow-visible">
+                <defs>
+                  <marker
+                    id="arrow-normal"
+                    markerWidth="8"
+                    markerHeight="8"
+                    refX="6"
+                    refY="4"
+                    orient="auto"
+                  >
+                    <path d="M0,0 L8,4 L0,8 Z" fill="#0284c7" />
+                  </marker>
+                  <marker
+                    id="arrow-crit"
+                    markerWidth="8"
+                    markerHeight="8"
+                    refX="6"
+                    refY="4"
+                    orient="auto"
+                  >
+                    <path d="M0,0 L8,4 L0,8 Z" fill="#f59e0b" />
+                  </marker>
+                </defs>
+
+                {/* Dependency Edges */}
+                {allNodes.map(node => {
+                  if (!node.antecedentId || node.antecedentId === '—') return null;
+                  const from = nodePositions.get(node.antecedentId);
+                  const to = nodePositions.get(node.id);
+                  if (!from || !to) return null;
+                  const predNode = allNodes.find(n => n.id === node.antecedentId);
+                  const isCritEdge = node.isCritical && predNode?.isCritical;
+
+                  const x1 = from.x + 210;
+                  const y1 = from.y + 52;
+                  const x2 = to.x;
+                  const y2 = to.y + 52;
+                  const midX = (x1 + x2) / 2;
+
+                  return (
+                    <path
+                      key={`${node.antecedentId}->${node.id}`}
+                      d={`M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`}
+                      fill="none"
+                      stroke={isCritEdge ? '#f59e0b' : '#0284c7'}
+                      strokeWidth={isCritEdge ? 3 : 1.8}
+                      strokeDasharray={isCritEdge ? undefined : '4 2'}
+                      markerEnd={
+                        isCritEdge ? 'url(#arrow-crit)' : 'url(#arrow-normal)'
+                      }
+                    />
+                  );
+                })}
+
+                {/* PERT Nodes (Driven by Budget & Disbursement) */}
+                {allNodes.map(node => {
+                  const pos = nodePositions.get(node.id);
+                  if (!pos) return null;
+                  const isFullyDisbursed = node.tauxDecaissement >= 100 && node.budget > 0;
+                  return (
+                    <g
+                      key={node.id}
+                      transform={`translate(${pos.x}, ${pos.y})`}
+                    >
+                      <rect
+                        width={210}
+                        height={104}
+                        rx={10}
+                        fill={
+                          isFullyDisbursed
+                            ? '#ecfdf5'
+                            : node.isCritical
+                            ? '#fffbeb'
+                            : '#f0f9ff'
+                        }
+                        stroke={
+                          isFullyDisbursed
+                            ? '#10b981'
+                            : node.isCritical
+                            ? '#f59e0b'
+                            : '#0284c7'
+                        }
+                        strokeWidth={node.isCritical || isFullyDisbursed ? 2.5 : 1.5}
+                      />
+                      <text
+                        x={10}
+                        y={17}
+                        fontSize={10.5}
+                        fontWeight="900"
+                        fill="#0c4a6e"
+                      >
+                        {node.code} • {node.tauxDecaissement}% {language === 'EN' ? 'Disbursed' : 'Décaissé'}
+                      </text>
+                      {node.isCritical && (
+                        <text
+                          x={152}
+                          y={17}
+                          fontSize={8.5}
+                          fontWeight="900"
+                          fill="#d97706"
+                        >
+                          {language === 'EN' ? 'CRITICAL' : 'CRITIQUE'}
+                        </text>
                       )}
-                      {enrichedProjects.map(project => {
-                        return (
-                          <React.Fragment key={project.id}>
-                            {project.groups.map((group, idx) => (
-                              <React.Fragment key={`${project.id}-phase-${idx}`}>
-                                <tr className="bg-emerald-800 border-b border-emerald-700">
-                                  <td colSpan={25} className="p-0 border-r border-emerald-700 sticky left-0 bg-emerald-800 z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
-                                    <div className="px-4 py-2 w-full flex items-center justify-between">
-                                      <span className="text-emerald-100 font-bold text-xs uppercase tracking-widest">
-                                        {group.phase}
-                                      </span>
-                                      {!project.isReadOnly && (
-                                        <button 
-                                          onClick={() => handleAddTask(project.id, group.phase)}
-                                          className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1 rounded text-[10px] font-bold flex items-center transition-colors shadow-sm cursor-pointer"
-                                        >
-                                          <Plus className="w-3 h-3 mr-1" /> Ajouter
-                                        </button>
-                                      )}
-                                    </div>
-                                  </td>
-                                </tr>
-                                
-                                {editingTaskId === 'new' && editingProjectId === project.id && editingPhase === group.phase && (
-                                  <tr className="bg-emerald-50/80 border-b border-emerald-200 shadow-inner">
-                                    <td className="px-2 py-2 sticky left-0 bg-emerald-50/80 z-30 border-r border-emerald-200">
-                                      <select className="w-full p-1.5 text-[10px] font-bold border border-emerald-300 rounded focus:ring-2 focus:ring-emerald-500 outline-none text-emerald-700 bg-white" value={editFormData.type} onChange={(e) => {
-                                        const val = e.target.value; setEditFormData({...editFormData, type: val, endDate: val === 'jalon' ? editFormData.startDate : editFormData.endDate});
-                                      }}>
-                                        <option value="tache">Tâche</option><option value="jalon">Jalon</option>
-                                      </select>
-                                    </td>
-                                    <td className="px-2 py-2 sticky left-[90px] bg-emerald-50/80 z-30 border-r border-emerald-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
-                                      <input type="text" placeholder="Activité / Tâche..." className="w-full p-1.5 text-xs font-bold border border-emerald-300 rounded focus:ring-2 focus:ring-emerald-500 outline-none text-slate-800" value={editFormData.name} onChange={(e) => setEditFormData({...editFormData, name: e.target.value})} autoFocus />
-                                    </td>
-                                    <td className="px-2 py-2 border-r border-emerald-200">
-                                      <input type="text" placeholder="Responsable..." className="w-full p-1.5 text-[10px] font-bold border border-emerald-300 rounded focus:ring-2 focus:ring-emerald-500 outline-none" value={editFormData.assignee} onChange={(e) => setEditFormData({...editFormData, assignee: e.target.value})} />
-                                    </td>
-                                    <td className="px-2 py-2 border-r border-emerald-200">
-                                      <select className="w-full p-1.5 text-[10px] font-bold border border-emerald-300 rounded focus:ring-2 focus:ring-emerald-500 outline-none" value={editFormData.status} onChange={(e) => setEditFormData({...editFormData, status: e.target.value})}>
-                                        <option value="À faire">À faire</option><option value="En cours">En cours</option><option value="Terminé">Terminé</option><option value="Bloqué">Bloqué</option>
-                                      </select>
-                                      {editFormData.status === 'Bloqué' && (
-                                        <input type="text" placeholder="Précisez le motif..." className="w-full mt-1.5 p-1.5 text-[9px] font-medium border border-red-300 rounded outline-none placeholder-red-300 text-red-700 bg-red-50 focus:ring-1 focus:ring-red-400" value={editFormData.motifBlocage || ''} onChange={(e) => setEditFormData({...editFormData, motifBlocage: e.target.value})} />
-                                      )}
-                                    </td>
-                                    <td className="px-2 py-2 border-r border-emerald-200">
-                                      <input type="date" className="w-full p-1.5 text-[10px] font-bold border border-emerald-300 rounded focus:ring-2 focus:ring-emerald-500 outline-none text-indigo-700" value={editFormData.startDate} onChange={(e) => {
-                                        const d = e.target.value; setEditFormData({...editFormData, startDate: d, endDate: editFormData.type === 'jalon' ? d : editFormData.endDate});
-                                      }} />
-                                    </td>
-                                    <td className="px-2 py-2 border-r border-emerald-200">
-                                      <input type="date" className="w-full p-1.5 text-[10px] font-bold border border-emerald-300 rounded focus:ring-2 focus:ring-emerald-500 outline-none text-indigo-700" value={editFormData.endDate} onChange={(e) => setEditFormData({...editFormData, endDate: e.target.value})} disabled={editFormData.type === 'jalon'} />
-                                    </td>
-                                    <td className="px-2 py-2 border-r border-emerald-200 bg-pink-50/50">
-                                      <input type="text" placeholder="Bailleur..." className="w-full p-1.5 text-[10px] font-bold border border-pink-300 rounded focus:ring-2 focus:ring-pink-500 outline-none text-slate-800 bg-white" value={editFormData.responsableTresorerie} onChange={(e) => setEditFormData({...editFormData, responsableTresorerie: e.target.value})} />
-                                    </td>
-                                    <td className="px-2 py-2 border-r border-emerald-200 bg-purple-50/30">
-                                      <input type="date" className="w-full p-1.5 text-[10px] font-bold border border-purple-300 rounded outline-none text-purple-700 bg-white" value={editFormData.dateDecaissementPrevu || ''} onChange={(e) => setEditFormData({...editFormData, dateDecaissementPrevu: e.target.value})} title="Date de décaissement prévue" />
-                                    </td>
-                                    <td className="px-2 py-2 border-r border-emerald-200 bg-purple-50/30">
-                                      <input type="number" placeholder="Montant..." className="w-full p-1.5 text-[10px] font-bold border border-purple-300 rounded outline-none text-center text-purple-700 bg-white" value={editFormData.montantDecaissementPrevu !== undefined ? editFormData.montantDecaissementPrevu : ''} onChange={(e) => setEditFormData({...editFormData, montantDecaissementPrevu: e.target.value !== '' ? Number(e.target.value) : ''})} />
-                                    </td>
-                                    <td className="px-2 py-2 border-r border-emerald-200 bg-teal-50/30">
-                                      <input type="date" className="w-full p-1.5 text-[10px] font-bold border border-teal-300 rounded outline-none text-teal-700 bg-white" value={editFormData.dateDecaissementReel || ''} onChange={(e) => setEditFormData({...editFormData, dateDecaissementReel: e.target.value})} title="Date de décaissement effectuée" />
-                                    </td>
-                                    <td className="px-2 py-2 border-r border-emerald-200 bg-teal-50/30">
-                                      <input type="number" placeholder="Montant..." className="w-full p-1.5 text-[10px] font-bold border border-teal-300 rounded outline-none text-center text-teal-700 bg-white" value={editFormData.montantDecaissementReel !== undefined ? editFormData.montantDecaissementReel : ''} onChange={(e) => setEditFormData({...editFormData, montantDecaissementReel: e.target.value !== '' ? Number(e.target.value) : ''})} />
-                                    </td>
-                                    <td className="px-2 py-2 border-r border-emerald-200 text-center bg-slate-50">
-                                      <span className="text-[10px] text-emerald-400 italic">Auto.</span>
-                                    </td>
-                                    <td className="px-2 py-2 border-r border-emerald-200">
-                                      <input type="number" placeholder="VP" className="w-full p-1.5 text-[10px] font-bold border border-blue-300 rounded outline-none text-center text-blue-700" value={editFormData.coutPlanifie} onChange={(e) => setEditFormData({...editFormData, coutPlanifie: Number(e.target.value)})} />
-                                    </td>
-                                    <td className="px-2 py-2 border-r border-emerald-200">
-                                      <input type="number" placeholder="VA" className="w-full p-1.5 text-[10px] font-bold border border-emerald-300 rounded outline-none text-center text-emerald-700" value={editFormData.valeurAcquise} onChange={(e) => setEditFormData({...editFormData, valeurAcquise: Number(e.target.value)})} />
-                                    </td>
-                                    <td className="px-2 py-2 border-r border-emerald-200 text-center font-bold text-[10px] text-emerald-600 bg-white">
-                                      {(Number(editFormData.coutPlanifie) || 0) > 0 ? Math.round(((Number(editFormData.valeurAcquise) || 0) / (Number(editFormData.coutPlanifie) || 1)) * 100) : 0}%
-                                    </td>
-                                    <td className="px-2 py-2 border-r border-emerald-200">
-                                      <input type="number" placeholder="CR" className="w-full p-1.5 text-[10px] font-bold border border-orange-300 rounded outline-none text-center text-orange-700" value={editFormData.coutReel} onChange={(e) => setEditFormData({...editFormData, coutReel: Number(e.target.value)})} />
-                                    </td>
-                                    <td className="px-2 py-2 text-center bg-emerald-50/80 sticky right-0 z-30 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.05)] border-l border-emerald-200">
-                                      <div className="flex justify-center gap-1.5">
-                                        <button onClick={handleSaveTask} className="bg-emerald-500 hover:bg-emerald-600 text-white p-1.5 rounded shadow-sm transition-colors cursor-pointer" title="Enregistrer"><CheckCircle className="w-4 h-4"/></button>
-                                        <button onClick={() => setEditingTaskId(null)} className="bg-red-500 hover:bg-red-600 text-white p-1.5 rounded shadow-sm transition-colors cursor-pointer" title="Annuler"><span className="font-black text-[10px] w-4 h-4 flex items-center justify-center">X</span></button>
-                                      </div>
-                                    </td>
-                                  </tr>
-                                )}
+                      <text x={10} y={32} fontSize={9.5} fill="#334155" fontWeight="700">
+                        {node.name.length > 28
+                          ? `${node.name.slice(0, 28)}…`
+                          : node.name}
+                      </text>
+                      <line
+                        x1={8}
+                        y1={39}
+                        x2={202}
+                        y2={39}
+                        stroke="#cbd5e1"
+                        strokeWidth={1}
+                      />
+                      <text x={10} y={53} fontSize={9} fontWeight="bold" fill="#0c4a6e">
+                        {language === 'EN' ? 'Budget:' : 'Budget :'} {node.budget.toLocaleString('fr-FR')} {currency}
+                      </text>
+                      <text x={10} y={67} fontSize={9} fontWeight="bold" fill="#047857">
+                        {language === 'EN' ? 'Disbursed:' : 'Décaissé :'} {node.montantDecaisse.toLocaleString('fr-FR')} {currency}
+                      </text>
+                      <text x={10} y={81} fontSize={8.5} fontWeight="bold" fill="#b45309">
+                        {language === 'EN' ? 'Remaining:' : 'Reste :'} {node.resteADecaisser.toLocaleString('fr-FR')} {currency}
+                      </text>
+                      <text x={10} y={95} fontSize={8} fill="#475569">
+                        {language === 'EN' ? 'Donor:' : 'Bailleur :'} {(node.bailleur || '—').slice(0, 18)} | J+{node.es}→J+{node.ef}
+                      </text>
+                    </g>
+                  );
+                })}
+              </svg>
+            </div>
+          </div>
+        ) : (
+          /* PERT Table Driven by Budget & Disbursement */
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-x-auto">
+            <table className="w-full border-collapse table-compact">
+              <thead>
+                <tr className="bg-[#0c4a6e] text-white">
+                  <th className="text-left">Code</th>
+                  <th className="text-left">
+                    {language === 'EN' ? 'Activity / Milestone' : 'Activité / Jalon'}
+                  </th>
+                  <th className="text-left">{language === 'EN' ? 'Donor / Funder' : 'Bailleur'}</th>
+                  <th className="text-center">
+                    {language === 'EN' ? 'Predec.' : 'Antécéd.'}
+                  </th>
+                  <th className="text-left">
+                    {language === 'EN'
+                      ? 'Preceding Chain'
+                      : 'Chaîne Précéd.'}
+                  </th>
+                  <th className="text-right">Budget ({currency})</th>
+                  <th className="text-right">{language === 'EN' ? `Disbursed (${currency})` : `Décaissé (${currency})`}</th>
+                  <th className="text-right">{language === 'EN' ? `Remaining to Disburse (${currency})` : `Reste à Décaisser (${currency})`}</th>
+                  <th className="text-center">{language === 'EN' ? '% Disbursed' : '% Décaissé'}</th>
+                  <th className="text-center">
+                    {language === 'EN' ? 'Total Float' : 'Marge'}
+                  </th>
+                  <th className="text-center">
+                    {language === 'EN' ? 'Critical Path' : 'Chemin Critique'}
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                {allNodes.map(node => (
+                  <tr
+                    key={node.id}
+                    className={
+                      node.isCritical
+                        ? 'bg-amber-50/60 dark:bg-amber-950/30 font-bold'
+                        : 'bg-white dark:bg-slate-900'
+                    }
+                  >
+                    <td className="font-mono text-[#0c4a6e] dark:text-[#90D5FF] font-black">
+                      {node.code}
+                    </td>
+                    <td className="text-slate-900 dark:text-white whitespace-normal break-words">
+                      {node.name}
+                    </td>
+                    <td className="text-slate-700 dark:text-slate-300 whitespace-normal">
+                      {node.bailleur || '—'}
+                    </td>
+                    <td className="text-center font-mono text-slate-700 dark:text-slate-300">
+                      {node.antecedentCode}
+                    </td>
+                    <td className="font-mono text-slate-600 dark:text-slate-400">
+                      {node.precedingChainCodes}
+                    </td>
+                    <td className="text-right font-mono font-bold text-[#0c4a6e] dark:text-[#90D5FF]">
+                      {node.budget.toLocaleString('fr-FR')}
+                    </td>
+                    <td className="text-right font-mono font-bold text-emerald-700 dark:text-emerald-300">
+                      {node.montantDecaisse.toLocaleString('fr-FR')}
+                    </td>
+                    <td className="text-right font-mono font-bold text-amber-700 dark:text-amber-300">
+                      {node.resteADecaisser.toLocaleString('fr-FR')}
+                    </td>
+                    <td className="text-center font-mono font-black text-[#0284c7] dark:text-[#90D5FF]">
+                      {node.tauxDecaissement}%
+                    </td>
+                    <td className="text-center font-mono">{node.totalFloat}j</td>
+                    <td className="text-center">
+                      {node.isCritical ? (
+                        <span className="px-2 py-0.5 rounded bg-amber-500 text-slate-950 text-[9px] font-black">
+                          {language === 'EN' ? 'CRITICAL' : 'CRITIQUE'}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-emerald-600 font-bold">
+                          {language === 'EN' ? 'Flexible' : 'Souple'}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
+  };
 
-                                {group.items.length === 0 ? (
-                                  <tr><td colSpan={25} className="px-8 py-3 text-left text-slate-400 italic text-[11px] bg-slate-50 sticky left-0">Aucune activité n'est encore enregistrée pour cette phase.</td></tr>
-                                ) : (
-                                  group.items.map((item) => {
-                                    if (editingTaskId === item.id) {
-                                      return (
-                                        <tr key={item.id} className="bg-emerald-50/80 border-b border-emerald-200 shadow-inner">
-                                          <td className="px-2 py-2 sticky left-0 bg-emerald-50/80 z-30 border-r border-emerald-200">
-                                            <select className="w-full p-1.5 text-[10px] font-bold border border-emerald-300 rounded focus:ring-2 focus:ring-emerald-500 outline-none text-emerald-700 bg-white" value={editFormData.type} onChange={(e) => {
-                                              const val = e.target.value; setEditFormData({...editFormData, type: val, endDate: val === 'jalon' ? editFormData.startDate : editFormData.endDate});
-                                            }}>
-                                              <option value="tache">Tâche</option><option value="jalon">Jalon</option>
-                                            </select>
-                                          </td>
-                                          <td className="px-2 py-2 sticky left-[90px] bg-emerald-50/80 z-30 border-r border-emerald-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
-                                            <input type="text" placeholder="Activité..." className="w-full p-1.5 text-xs font-bold border border-emerald-300 rounded outline-none text-slate-800" value={editFormData.name} onChange={(e) => setEditFormData({...editFormData, name: e.target.value})} autoFocus />
-                                          </td>
-                                          <td className="px-2 py-2 border-r border-emerald-200">
-                                            <input type="text" placeholder="Responsable..." className="w-full p-1.5 text-[10px] font-bold border border-emerald-300 rounded outline-none" value={editFormData.assignee} onChange={(e) => setEditFormData({...editFormData, assignee: e.target.value})} />
-                                          </td>
-                                          <td className="px-2 py-2 border-r border-emerald-200">
-                                            <select className="w-full p-1.5 text-[10px] font-bold border border-emerald-300 rounded outline-none" value={editFormData.status} onChange={(e) => setEditFormData({...editFormData, status: e.target.value})}>
-                                              <option value="À faire">À faire</option><option value="En cours">En cours</option><option value="Terminé">Terminé</option><option value="Bloqué">Bloqué</option>
-                                            </select>
-                                            {editFormData.status === 'Bloqué' && (
-                                              <input type="text" placeholder="Précisez le motif..." className="w-full mt-1.5 p-1.5 text-[9px] font-medium border border-red-300 rounded outline-none placeholder-red-300 text-red-700 bg-red-50 focus:ring-1 focus:ring-red-400" value={editFormData.motifBlocage || ''} onChange={(e) => setEditFormData({...editFormData, motifBlocage: e.target.value})} />
-                                            )}
-                                          </td>
-                                          <td className="px-2 py-2 border-r border-emerald-200">
-                                            <input type="date" className="w-full p-1.5 text-[10px] font-bold border border-emerald-300 rounded outline-none text-indigo-700" value={editFormData.startDate} onChange={(e) => {
-                                              const d = e.target.value; setEditFormData({...editFormData, startDate: d, endDate: editFormData.type === 'jalon' ? d : editFormData.endDate});
-                                            }} />
-                                          </td>
-                                          <td className="px-2 py-2 border-r border-emerald-200">
-                                            <input type="date" className="w-full p-1.5 text-[10px] font-bold border border-emerald-300 rounded outline-none text-indigo-700" value={editFormData.endDate} onChange={(e) => setEditFormData({...editFormData, endDate: e.target.value})} disabled={editFormData.type === 'jalon'} />
-                                          </td>
-                                          <td className="px-2 py-2 border-r border-emerald-200 bg-pink-50/50">
-                                            <input type="text" placeholder="Bailleur..." className="w-full p-1.5 text-[10px] font-bold border border-pink-300 rounded outline-none text-slate-800 bg-white" value={editFormData.responsableTresorerie} onChange={(e) => setEditFormData({...editFormData, responsableTresorerie: e.target.value})} />
-                                          </td>
-                                          <td className="px-2 py-2 border-r border-emerald-200 bg-purple-50/30">
-                                            <input type="date" className="w-full p-1.5 text-[10px] font-bold border border-purple-300 rounded outline-none text-purple-700 bg-white" value={editFormData.dateDecaissementPrevu || ''} onChange={(e) => setEditFormData({...editFormData, dateDecaissementPrevu: e.target.value})} title="Date de décaissement prévue" />
-                                          </td>
-                                          <td className="px-2 py-2 border-r border-emerald-200 bg-purple-50/30">
-                                            <input type="number" placeholder="Montant..." className="w-full p-1.5 text-[10px] font-bold border border-purple-300 rounded outline-none text-center text-purple-700 bg-white" value={editFormData.montantDecaissementPrevu !== undefined ? editFormData.montantDecaissementPrevu : ''} onChange={(e) => setEditFormData({...editFormData, montantDecaissementPrevu: e.target.value !== '' ? Number(e.target.value) : ''})} />
-                                          </td>
-                                          <td className="px-2 py-2 border-r border-emerald-200 bg-teal-50/30">
-                                            <input type="date" className="w-full p-1.5 text-[10px] font-bold border border-teal-300 rounded outline-none text-teal-700 bg-white" value={editFormData.dateDecaissementReel || ''} onChange={(e) => setEditFormData({...editFormData, dateDecaissementReel: e.target.value})} title="Date de décaissement effectuée" />
-                                          </td>
-                                          <td className="px-2 py-2 border-r border-emerald-200 bg-teal-50/30">
-                                            <input type="number" placeholder="Montant..." className="w-full p-1.5 text-[10px] font-bold border border-teal-300 rounded outline-none text-center text-teal-700 bg-white" value={editFormData.montantDecaissementReel !== undefined ? editFormData.montantDecaissementReel : ''} onChange={(e) => setEditFormData({...editFormData, montantDecaissementReel: e.target.value !== '' ? Number(e.target.value) : ''})} />
-                                          </td>
-                                          <td className="px-2 py-2 border-r border-emerald-200 text-center bg-slate-50">
-                                            <span className="text-[10px] text-emerald-400 italic">Auto.</span>
-                                          </td>
-                                          <td className="px-2 py-2 border-r border-emerald-200">
-                                            <input type="number" placeholder="VP" className="w-full p-1.5 text-[10px] font-bold border border-blue-300 rounded outline-none text-center text-blue-700" value={editFormData.coutPlanifie} onChange={(e) => setEditFormData({...editFormData, coutPlanifie: Number(e.target.value)})} />
-                                          </td>
-                                          <td className="px-2 py-2 border-r border-emerald-200">
-                                            <input type="number" placeholder="VA" className="w-full p-1.5 text-[10px] font-bold border border-emerald-300 rounded outline-none text-center text-emerald-700" value={editFormData.valeurAcquise} onChange={(e) => setEditFormData({...editFormData, valeurAcquise: Number(e.target.value)})} />
-                                          </td>
-                                          <td className="px-2 py-2 border-r border-emerald-200 text-center font-bold text-[10px] text-emerald-600 bg-white">
-                                            {(Number(editFormData.coutPlanifie) || 0) > 0 ? Math.round(((Number(editFormData.valeurAcquise) || 0) / (Number(editFormData.coutPlanifie) || 1)) * 100) : 0}%
-                                          </td>
-                                          <td className="px-2 py-2 border-r border-emerald-200">
-                                            <input type="number" placeholder="CR" className="w-full p-1.5 text-[10px] font-bold border border-orange-300 rounded outline-none text-center text-orange-700" value={editFormData.coutReel} onChange={(e) => setEditFormData({...editFormData, coutReel: Number(e.target.value)})} />
-                                          </td>
-                                          <td className="px-2 py-2 text-center bg-emerald-50/80 sticky right-0 z-30 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.05)] border-l border-emerald-200">
-                                            <div className="flex justify-center gap-1.5">
-                                              <button onClick={handleSaveTask} className="bg-emerald-500 hover:bg-emerald-600 text-white p-1.5 rounded shadow-sm transition-colors cursor-pointer" title="Enregistrer"><CheckCircle className="w-4 h-4"/></button>
-                                              <button onClick={() => setEditingTaskId(null)} className="bg-red-500 hover:bg-red-600 text-white p-1.5 rounded shadow-sm transition-colors cursor-pointer" title="Annuler"><span className="font-black text-[10px] w-4 h-4 flex items-center justify-center">X</span></button>
-                                            </div>
-                                          </td>
-                                        </tr>
-                                      );
-                                    }
+  // ============================================================================
+  // VIEW: TABLEAU KANBAN INTERACTIF (Driven by Budget & Disbursement)
+  // ============================================================================
+  const renderKanbanView = () => {
+    const columns: Array<{
+      status: Task['status'];
+      title: string;
+      headerBg: string;
+    }> = [
+      {
+        status: 'À faire',
+        title: language === 'EN' ? 'Not Disbursed (0%)' : 'Non Décaissé (0%)',
+        headerBg: 'bg-slate-700 text-white'
+      },
+      {
+        status: 'En cours',
+        title: language === 'EN' ? 'Disbursement in Progress' : 'Décaissement en Cours',
+        headerBg: 'bg-[#0284c7] text-white'
+      },
+      {
+        status: 'Bloqué',
+        title:
+          language === 'EN'
+            ? 'Disbursement Delay / Overrun'
+            : 'Retard Décaissement / Dépassement',
+        headerBg: 'bg-amber-500 text-slate-950'
+      },
+      {
+        status: 'Terminé',
+        title: language === 'EN' ? '100% Disbursed' : '100% Décaissé / Exécuté',
+        headerBg: 'bg-emerald-600 text-white'
+      }
+    ];
 
-                                    return (
-                                      <tr key={item.id} className="group hover:bg-emerald-50/40 transition-colors text-xs bg-slate-50 border-b border-gray-100">
-                                        <td className="px-2 py-3 flex items-start font-bold relative text-emerald-600 sticky left-0 bg-slate-50 group-hover:bg-emerald-50 z-30 border-r border-gray-200 align-top w-[90px] min-w-[90px] max-w-[90px]">
-                                          <span className="w-12 shrink-0 truncate">{item.type === 'tache' ? `Tâche ${item.number}` : `Jalon ${item.number}`}</span>
-                                          {item.type === 'jalon' && <Diamond className="w-3.5 h-3.5 text-emerald-400 fill-current ml-1 mt-0.5 shrink-0" />}
-                                        </td>
-                                        <td className="px-3 py-3 font-bold text-white whitespace-normal leading-tight sticky left-[90px] bg-slate-800 group-hover:bg-slate-700 z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] border-r border-slate-700 w-[180px] min-w-[180px] max-w-[180px] align-top text-[11px]">
-                                          <div className="flex items-start">
-                                            {item.type === 'jalon' ? <Diamond className="w-3 h-3 mr-2 fill-current mt-0.5 shrink-0 text-yellow-400" /> : <Activity className="w-3 h-3 mr-2 mt-0.5 shrink-0 text-emerald-400" />}
-                                            <span title={item.name}>{item.name}</span>
-                                          </div>
-                                        </td>
-                                        <td className="px-4 py-3 text-center border-r border-gray-200 bg-slate-50 align-top">
-                                          <div className="font-bold text-slate-700">{item.assignee || '-'}</div>
-                                        </td>
-                                        <td className="px-4 py-3 text-center border-r border-gray-200 bg-white align-top">
-                                          <span className={`px-2 py-1 rounded text-[10px] font-bold shadow-sm inline-block min-w-[70px] ${
-                                            item.status === 'Terminé' ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' :
-                                            item.status === 'En cours' ? 'bg-blue-100 text-blue-700 border border-blue-200' :
-                                            item.status === 'Bloqué' ? 'bg-red-100 text-red-700 border border-red-200' : 'bg-gray-100 text-gray-700 border border-gray-200'
-                                          }`}>
-                                            {item.status}
-                                          </span>
-                                          {item.status === 'Bloqué' && item.motifBlocage && (
-                                            <div className="mt-1.5 text-[9px] text-red-600 font-bold bg-red-50 p-1 rounded border border-red-100 break-words leading-tight w-full max-w-[120px] mx-auto">
-                                              {item.motifBlocage}
-                                            </div>
-                                          )}
-                                        </td>
-                                        <td className="px-3 py-3 text-center border-r border-gray-100 text-indigo-700 bg-indigo-50/30 align-top">{item.debutPrevuStr}</td>
-                                        <td className="px-3 py-3 text-center border-r border-gray-200 text-indigo-700 bg-indigo-50/30 align-top">{item.finPrevueStr}</td>
-                                        <td className="px-3 py-3 text-center border-r border-gray-200 bg-pink-50/30 align-top whitespace-normal">
-                                          <div className="font-bold text-slate-700">{item.responsableTresorerie || '-'}</div>
-                                        </td>
-                                        <td className="px-3 py-3 text-center border-r border-gray-100 text-purple-700 font-medium bg-purple-50/30 align-top">{item.dateDecaissementPrevuStr}</td>
-                                        <td className="px-3 py-3 text-center border-r border-gray-200 text-purple-700 font-bold bg-purple-50/30 align-top">{item.decaissementPrevuADate > 0 ? `${item.decaissementPrevuADate} M` : '-'}</td>
-                                        <td className="px-3 py-3 text-center border-r border-gray-100 text-teal-700 font-medium bg-teal-50/30 align-top">{item.dateDecaissementReelStr}</td>
-                                        <td className="px-3 py-3 text-center border-r border-gray-200 text-teal-700 font-bold bg-teal-50/30 align-top">{item.decaisse > 0 ? `${item.decaisse} M` : '-'}</td>
-                                        <td className="px-3 py-3 text-center border-r border-slate-200 align-top">
-                                          <span className={`px-2 py-1 rounded text-[10px] font-bold shadow-sm inline-block border ${item.statutColorDecaissement}`}>
-                                            {item.statutDecaissement}
-                                          </span>
-                                        </td>
-                                        <td className="px-3 py-3 text-center text-blue-700 bg-blue-50/30 border-r border-gray-100 font-medium align-top">{item.vp} M</td>
-                                        <td className="px-3 py-3 text-center text-green-700 bg-green-50/30 border-r border-gray-100 font-bold align-top">{item.va} M</td>
-                                        <td className="px-3 py-3 text-center text-emerald-600 bg-emerald-50/30 border-r border-gray-100 font-bold align-top">{item.avancement}%</td>
-                                        <td className="px-3 py-3 text-center text-orange-700 bg-orange-50/30 border-r border-gray-200 font-medium align-top">{item.cr} M</td>
-                                        <td className="px-2 py-3 text-center align-top border-l border-gray-100 bg-white sticky right-0 z-20 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.05)] w-[70px]">
-                                          {!project.isReadOnly && (
-                                            <div className="flex justify-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                              <button onClick={() => handleEditTask(project.id, group.phase, item)} className="p-1 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded border border-blue-200 cursor-pointer" title="Modifier"><Edit3 className="w-3.5 h-3.5"/></button>
-                                              <button onClick={() => handleDeleteTask(project.id, item.id)} className="p-1 bg-red-50 hover:bg-red-100 text-red-600 rounded border border-red-200 cursor-pointer" title="Supprimer"><Trash2 className="w-3.5 h-3.5"/></button>
-                                            </div>
-                                          )}
-                                        </td>
-                                      </tr>
-                                    );
-                                  })
-                                )}
-                              </React.Fragment>
+    return (
+      <div className="space-y-2.5 sm:space-y-4">
+        {renderMacroFilterBar()}
+
+        <div className="bg-white dark:bg-slate-900 rounded-lg sm:rounded-xl border border-slate-200 dark:border-slate-800 p-2 sm:p-3 shadow-sm">
+          <h2 className="text-xs sm:text-base font-black text-slate-900 dark:text-white uppercase tracking-tight flex items-center gap-1.5 sm:gap-2">
+            <Kanban className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#0284c7] dark:text-[#90D5FF] shrink-0" />
+            <span>
+              {language === 'EN'
+                ? 'Interactive Kanban Board (Driven by Budget & Disbursement)'
+                : 'Tableau Kanban Interactif (Fonction du Budget & du Décaissement)'}
+            </span>
+          </h2>
+          <p className="text-[9.5px] sm:text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
+            {language === 'EN'
+              ? 'Move a budget line across disbursement columns to automatically update its disbursed amount, earned value, and remaining balance.'
+              : 'Déplacez une ligne budgétaire d’une colonne à une autre pour mettre à jour automatiquement le montant décaissé, la valeur acquise et le reste à décaisser.'}
+          </p>
+        </div>
+
+        {/* HORIZONTAL KANBAN COLUMNS (Side-by-side horizontally on mobile & desktop!) */}
+        <div className="flex flex-row overflow-x-auto lg:grid lg:grid-cols-4 gap-2 sm:gap-3 pb-2">
+          {columns.map(col => {
+            const colRows = flatTaskRows.filter(
+              r => r.metrics.effectiveStatus === col.status
+            );
+            const colBudget = colRows.reduce(
+              (acc, r) => acc + r.metrics.budgetPrevu,
+              0
+            );
+            const colDecaisse = colRows.reduce(
+              (acc, r) => acc + r.metrics.montantDecaisse,
+              0
+            );
+
+            return (
+              <div
+                key={col.status}
+                className="min-w-[225px] w-[225px] sm:min-w-[260px] sm:w-[260px] lg:min-w-0 lg:w-auto shrink-0 bg-slate-100/80 dark:bg-slate-900/70 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden"
+              >
+                <div
+                  className={`px-2.5 py-2 sm:px-3 sm:py-2.5 ${col.headerBg} flex flex-col gap-0.5`}
+                >
+                  <div className="flex items-center justify-between font-black text-[10px] sm:text-xs uppercase">
+                    <span className="truncate">{col.title}</span>
+                    <span className="px-1.5 sm:px-2 py-0.5 rounded-full bg-black/20 text-[9px] sm:text-[10px] shrink-0">
+                      {colRows.length}
+                    </span>
+                  </div>
+                  <div className="text-[8.5px] sm:text-[9.5px] font-mono font-bold opacity-90 flex items-center justify-between">
+                    <span>Budget: {colBudget.toLocaleString('fr-FR')}</span>
+                    <span>Déc.: {colDecaisse.toLocaleString('fr-FR')}</span>
+                  </div>
+                </div>
+
+                <div className="p-2 sm:p-2.5 space-y-2 sm:space-y-2.5 flex-1 max-h-[65vh] overflow-y-auto">
+                  {colRows.map(r => {
+                    const { task, code, projectId, metrics } = r;
+                    const isJalon = task.type === 'jalon';
+
+                    return (
+                      <div
+                        key={task.id}
+                        className={`rounded-lg border p-2 sm:p-3 shadow-xs space-y-1.5 sm:space-y-2 ${
+                          isJalon
+                            ? 'bg-sky-50/80 dark:bg-slate-800/70 border-[#90D5FF]'
+                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-1.5 sm:gap-2">
+                          <span
+                            className={`px-1.5 py-0.5 rounded font-mono text-[9px] sm:text-[10px] font-black shrink-0 ${
+                              isJalon
+                                ? 'bg-[#90D5FF] text-slate-950'
+                                : 'bg-[#0c4a6e] text-white'
+                            }`}
+                          >
+                            {code}
+                          </span>
+                          <span className="text-[8.5px] sm:text-[10px] font-black text-[#0284c7] dark:text-[#90D5FF] text-right leading-tight">
+                            {metrics.tauxDecaissementPct}% {language === 'EN' ? 'Disbursed' : 'Décaissé'}
+                          </span>
+                        </div>
+
+                        <div className="text-[10.5px] sm:text-xs font-extrabold text-slate-900 dark:text-white leading-snug">
+                          {isJalon ? `◆ ${task.name}` : task.name}
+                        </div>
+
+                        {/* Budget & Disbursement Bar */}
+                        <div className="w-full h-1.5 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                          <div
+                            className={`h-full ${
+                              metrics.tauxDecaissementPct >= 100
+                                ? 'bg-emerald-500'
+                                : col.status === 'Bloqué'
+                                ? 'bg-amber-500'
+                                : 'bg-[#0284c7]'
+                            }`}
+                            style={{
+                              width: `${Math.min(100, metrics.tauxDecaissementPct)}%`
+                            }}
+                          />
+                        </div>
+
+                        <div className="text-[9px] sm:text-[10px] font-mono text-slate-600 dark:text-slate-300 space-y-0.5">
+                          <div className="flex justify-between font-bold">
+                            <span>{language === 'EN' ? 'Budget:' : 'Budget :'}</span>
+                            <span className="text-[#0c4a6e] dark:text-[#90D5FF]">
+                              {metrics.budgetPrevu.toLocaleString('fr-FR')} {currency}
+                            </span>
+                          </div>
+                          <div className="flex justify-between font-bold text-emerald-700 dark:text-emerald-300">
+                            <span>{language === 'EN' ? 'Disbursed:' : 'Décaissé :'}</span>
+                            <span>
+                              {metrics.montantDecaisse.toLocaleString('fr-FR')} {currency}
+                            </span>
+                          </div>
+                          <div className="flex justify-between font-bold text-amber-700 dark:text-amber-300">
+                            <span>{language === 'EN' ? 'Remaining:' : 'Reste :'}</span>
+                            <span>
+                              {metrics.resteADecaisser.toLocaleString('fr-FR')} {currency}
+                            </span>
+                          </div>
+                          <div className="truncate font-sans pt-0.5 text-slate-500 dark:text-slate-400">
+                            {language === 'EN' ? 'Donor:' : 'Bailleur :'} {task.bailleur || task.autorite || '—'}
+                          </div>
+                        </div>
+
+                        <div className="pt-1.5 sm:pt-2 border-t border-slate-100 dark:border-slate-700 flex flex-wrap gap-1">
+                          {columns
+                            .filter(c => c.status !== col.status)
+                            .map(targetCol => (
+                              <button
+                                key={targetCol.status}
+                                onClick={() =>
+                                  handleMoveTaskInKanban(
+                                    projectId,
+                                    task.id,
+                                    targetCol.status
+                                  )
+                                }
+                                className="px-1.5 sm:px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700 hover:bg-[#90D5FF] hover:text-slate-950 text-[8.5px] sm:text-[9px] font-bold text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+                              >
+                                → {targetCol.title}
+                              </button>
                             ))}
-                          </React.Fragment>
-                        );
-                      })}
-                    </tbody>
-                    <tfoot className="bg-slate-100 font-bold border-t-2 border-slate-300 sticky bottom-0 z-20">
-                      <tr>
-                        <td colSpan={12} className="px-3 py-3 text-slate-800 uppercase text-[10px] border-r border-slate-300 sticky left-0 bg-slate-100 z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] text-right">Total Global de la sélection</td>
-                        <td className="px-3 py-3 text-center text-blue-800 border-r border-slate-300">{totalVP} M</td>
-                        <td className="px-3 py-3 text-center text-green-800 border-r border-slate-300">{totalVA} M</td>
-                        <td className="px-3 py-3 text-center font-bold text-emerald-600 border-r border-slate-300">{totalVP > 0 ? Math.round((totalVA/totalVP)*100) : 0}%</td>
-                        <td className="px-3 py-3 text-center text-orange-800 border-r border-slate-300">{totalCR} M</td>
-                        <td className="px-3 py-3 bg-slate-100 sticky right-0 z-30 border-l border-slate-300 text-center">-</td>
-                      </tr>
-                    </tfoot>
-                  </table>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div
+      className={`min-h-screen flex flex-col ${
+        !isUnlocked || activeTab === 'accueil'
+          ? 'bg-transparent'
+          : 'bg-slate-50 dark:bg-slate-950'
+      } text-slate-900 dark:text-slate-100`}
+    >
+      {/* Hidden JSON & CSV File Inputs */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".json"
+        onChange={handleImportJSON}
+        className="hidden"
+      />
+      <input
+        ref={csvPlanInputRef}
+        type="file"
+        accept=".csv,text/csv"
+        onChange={handleImportPlanificationCSV}
+        className="hidden"
+      />
+      <input
+        ref={csvRaciInputRef}
+        type="file"
+        accept=".csv,text/csv"
+        onChange={handleImportRaciCSV}
+        className="hidden"
+      />
+
+      {/* Slidebar Drawer */}
+      {renderSlidebar()}
+
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-4 right-4 z-50 bg-[#0c4a6e] text-white px-4 py-2.5 rounded-xl shadow-xl border border-[#90D5FF] flex items-center gap-2 text-xs font-bold">
+          <CheckCircle2 className="w-4 h-4 text-[#90D5FF] shrink-0" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* MOBILE ONLY ON OTHER TABS (activeTab !== 'accueil'): Burger Icon (Regular Users) + App Icon right next to it */}
+      {isUnlocked && activeTab !== 'accueil' && (
+        <div className="md:hidden fixed top-2 left-2 z-40 flex items-center gap-1.5 no-print">
+          {isRegularUserUnlocked && (
+            <button
+              onClick={() => setIsSlidebarOpen(true)}
+              aria-label="Ouvrir le menu déroulant"
+              title="Menu FAAB BUD"
+              className="w-10 h-10 rounded-xl bg-[#0c4a6e] text-[#90D5FF] hover:bg-[#90D5FF] hover:text-slate-950 flex items-center justify-center transition-all border border-[#90D5FF]/70 shadow-md cursor-pointer shrink-0"
+            >
+              <Menu className="w-6 h-6" />
+            </button>
+          )}
+
+          <button
+            onClick={() => navigateTo('accueil')}
+            aria-label="Accueil FAAB BUD"
+            title="Accueil FAAB BUD"
+            className="w-12 h-12 rounded-xl bg-[#0c4a6e]/90 p-0.5 flex items-center justify-center border border-[#90D5FF]/80 shadow-md cursor-pointer shrink-0"
+          >
+            <AppLogo className="w-full h-full" />
+          </button>
+        </div>
+      )}
+
+      {/* INSTITUTIONAL NAVBAR: Locked at top of screen on scroll (fixed top-0 left-0 right-0 z-40). Visible on ALL screens on Home Page (accueil), and on Tablet/Desktop (md:block) on other tabs (No header on Mobile on other tabs) */}
+      <header
+        className={`${
+          !isUnlocked || activeTab === 'accueil' ? 'block' : 'hidden md:block'
+        } fixed top-0 left-0 right-0 z-40 bg-[#0c4a6e] text-white border-b-2 border-[#90D5FF] shadow-md no-print`}
+      >
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2 sm:py-2.5 flex items-center gap-2.5 sm:gap-4">
+          {/* Burger Menu Button (STRICT DOM REMOVAL: Only mounted when Regular User is unlocked; Super Admin has a dedicated Console button) */}
+          {isRegularUserUnlocked && (
+            <button
+              onClick={() => setIsSlidebarOpen(true)}
+              aria-label="Ouvrir le menu déroulant"
+              title="Ouvrir le menu déroulant"
+              className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-sky-950/80 text-[#90D5FF] hover:bg-[#90D5FF] hover:text-slate-950 flex items-center justify-center transition-all border border-[#90D5FF]/60 shadow-sm cursor-pointer shrink-0"
+            >
+              <Menu className="w-6 h-6" />
+            </button>
+          )}
+          {isSuperAdminUnlocked && activeTab === 'accueil' && (
+            <button
+              onClick={() => navigateTo('super_admin')}
+              aria-label="Ouvrir la Console Super Admin"
+              title="Ouvrir la Console Super Admin"
+              className="px-3 h-10 sm:h-11 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 flex items-center gap-1.5 transition-all border border-amber-300 shadow-sm cursor-pointer shrink-0 text-xs font-black uppercase tracking-wider"
+            >
+              <ShieldCheck className="w-4 h-4 shrink-0" />
+              <span className="hidden sm:inline">Console Admin</span>
+            </button>
+          )}
+
+          <div
+            onClick={() => navigateTo('accueil')}
+            className="flex items-center gap-2.5 sm:gap-3 cursor-pointer select-none min-w-0 flex-1"
+          >
+            <div className="w-14 h-14 sm:w-16 sm:h-16 shrink-0 flex items-center justify-center">
+              <AppLogo className="w-full h-full" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-base sm:text-lg font-black tracking-wider uppercase text-white leading-tight truncate">
+                FAAB BUD
+              </h1>
+              <p className="text-[10px] sm:text-[11px] font-semibold text-[#90D5FF] leading-tight truncate">
+                {t.appSubtitle}
+              </p>
+            </div>
+          </div>
+
+          {/* Bouton en icône "Mise à jour" sur la page d'accueil pour recharger et actualiser l'application FAAB BUD */}
+          {(!isUnlocked || activeTab === 'accueil') && (
+            <button
+              type="button"
+              onClick={async () => {
+                showToast(
+                  language === 'EN'
+                    ? 'Updating FAAB BUD application...'
+                    : 'Mise à jour et rechargement de FAAB BUD en cours...'
+                );
+                try {
+                  if ('serviceWorker' in navigator) {
+                    const regs = await navigator.serviceWorker.getRegistrations();
+                    await Promise.all(
+                      regs.map(async reg => {
+                        try {
+                          reg.active?.postMessage({ type: 'CLEAR_AND_UPDATE' });
+                          reg.waiting?.postMessage({ type: 'SKIP_WAITING' });
+                          await reg.update();
+                        } catch {
+                          // ignore
+                        }
+                      })
+                    );
+                  }
+                  if ('caches' in window) {
+                    const keys = await window.caches.keys();
+                    await Promise.all(keys.map(k => window.caches.delete(k)));
+                  }
+                } catch {
+                  // ignore
+                }
+                setTimeout(() => {
+                  window.location.reload();
+                }, 300);
+              }}
+              title={
+                language === 'EN'
+                  ? 'Update & Reload FAAB BUD Application'
+                  : 'Mise à jour : Recharger l’application pour la mettre à jour'
+              }
+              aria-label={language === 'EN' ? 'Update App' : 'Mise à jour'}
+              className="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 border border-amber-300 transition-all cursor-pointer shrink-0 shadow-sm"
+            >
+              <RefreshCw className="w-4 h-4 shrink-0" />
+            </button>
+          )}
+
+          {/* Le bouton de Scanner QR / Badge apparaît UNIQUEMENT dans l'espace Utilisateur déverrouillé (jamais pour Super Admin ni sur l'accueil) */}
+          {isRegularUserUnlocked && activeTab !== 'accueil' && (
+            <button
+              type="button"
+              onClick={() => setIsGlobalScannerOpen(true)}
+              title={
+                language === 'EN'
+                  ? 'Scan QR Code (vCard) or Badge Barcode (CODE-128)'
+                  : 'Scanner un QR Code (vCard) ou Code-Barres Badge (CODE-128)'
+              }
+              className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 h-9 rounded-xl bg-sky-950/90 hover:bg-[#90D5FF] text-[#90D5FF] hover:text-slate-950 border border-[#90D5FF]/60 text-[10px] sm:text-xs font-extrabold transition-all cursor-pointer shrink-0 shadow-sm"
+            >
+              <QrCode className="w-4 h-4 shrink-0" />
+              <span className="hidden sm:inline">
+                {language === 'EN' ? 'QR / Badge Scanner' : 'Scanner QR / Badge'}
+              </span>
+            </button>
+          )}
+
+          {/* Bouton d'État Authentification Google / Gmail */}
+          <AuthStatusButton
+            user={authUser}
+            isAuthLoading={isAuthLoading}
+            isSigningIn={isSigningIn}
+            onSignIn={handleGoogleSignIn}
+            onSignOut={handleSignOut}
+            language={language}
+            variant="header"
+            onLockDevice={() => {
+              setIsDeviceLocked(true);
+              setSuperAdminAuthModalStep('device_locked');
+              setIsSuperAdminAuthModalOpen(true);
+            }}
+          />
+        </div>
+
+        {/* BARRE DE NAVIGATION DES SECTIONS DE LA PAGE D'ACCUEIL (Uniquement sur la page d'accueil, en dessous du logo et de l'intitulé) */}
+        {(!isUnlocked || activeTab === 'accueil') && (
+          <nav
+            aria-label="Sections explicatives de la page d'accueil"
+            className="border-t border-sky-800/80 bg-[#082f49]/95 backdrop-blur-xs relative"
+          >
+            <div
+              ref={homeNavScrollRef}
+              className="max-w-7xl mx-auto py-2 flex items-center gap-2 sm:gap-3 overflow-x-auto hide-scrollbar scroll-smooth"
+            >
+              {/* Left spacer so the first section title can also position horizontally at the exact center of the navbar */}
+              <div
+                className="shrink-0 w-[36vw] sm:w-[40vw] lg:w-[42%]"
+                aria-hidden="true"
+              />
+              {[
+                {
+                  id: 'section-presentation',
+                  label:
+                    language === 'FR'
+                      ? '1. Présentation Générale'
+                      : '1. Overview'
+                },
+                {
+                  id: 'section-utilisation',
+                  label:
+                    language === 'FR'
+                      ? '2. Mode d’Emploi & Modules'
+                      : '2. Modules & Workflow'
+                },
+                {
+                  id: 'section-documents',
+                  label:
+                    language === 'FR'
+                      ? '3. Documents & Matrices'
+                      : '3. 22 Documents & Matrices'
+                },
+                {
+                  id: 'section-cibles',
+                  label:
+                    language === 'FR'
+                      ? '4. Publics Cibles & Domaines'
+                      : '4. Target Audiences & Sectors'
+                },
+                {
+                  id: 'section-offres',
+                  label:
+                    language === 'FR'
+                      ? '5. Offres Commerciales'
+                      : '5. Commercial Plans'
+                },
+                {
+                  id: 'section-methodologie',
+                  label:
+                    language === 'FR'
+                      ? '6. Méthodologie GAR & PERT'
+                      : '6. RBM & PERT Methodology'
+                },
+                {
+                  id: 'section-sauvegarde',
+                  label:
+                    language === 'FR'
+                      ? '7. Sauvegarde JSON'
+                      : '7. JSON Backup'
+                },
+                {
+                  id: 'section-credits',
+                  label:
+                    language === 'FR'
+                      ? '8. Crédits & Légal'
+                      : '8. Credits & Legal'
+                }
+              ].map(sec => {
+                const isActiveSec = activeHomeSection === sec.id;
+                return (
+                  <button
+                    key={sec.id}
+                    ref={el => {
+                      homeNavBtnRefs.current[sec.id] = el;
+                    }}
+                    type="button"
+                    aria-current={isActiveSec ? 'location' : undefined}
+                    onClick={() => {
+                      setActiveHomeSection(sec.id);
+                      const el = document.getElementById(sec.id);
+                      if (el) {
+                        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      }
+                    }}
+                    className={`px-3 sm:px-3.5 py-1.5 rounded-lg text-[10px] sm:text-xs font-extrabold tracking-tight whitespace-nowrap transition-all duration-300 cursor-pointer shrink-0 flex items-center gap-1.5 ${
+                      isActiveSec
+                        ? 'bg-[#90D5FF] text-slate-950 border-2 border-white ring-2 ring-[#90D5FF]/70 shadow-lg scale-105'
+                        : 'bg-sky-900/60 hover:bg-[#90D5FF]/80 text-sky-100/80 hover:text-slate-950 border border-[#90D5FF]/30 hover:border-[#90D5FF] opacity-80 hover:opacity-100 scale-95'
+                    }`}
+                  >
+                    {isActiveSec && (
+                      <span className="w-2 h-2 rounded-full bg-[#0c4a6e] animate-pulse shrink-0" />
+                    )}
+                    <span>{sec.label}</span>
+                  </button>
+                );
+              })}
+              {/* Right spacer so the last section title can also position horizontally at the exact center of the navbar */}
+              <div
+                className="shrink-0 w-[36vw] sm:w-[40vw] lg:w-[42%]"
+                aria-hidden="true"
+              />
+            </div>
+          </nav>
+        )}
+      </header>
+
+      {/* Compensating Spacer for Fixed Header (so content is never covered at the top) */}
+      <div
+        aria-hidden="true"
+        className={
+          !isUnlocked || activeTab === 'accueil'
+            ? 'h-[98px] sm:h-[106px] shrink-0 no-print'
+            : 'hidden md:block md:h-[62px] shrink-0 no-print'
+        }
+      />
+
+      {/* MAIN CONTENT AREA */}
+      <main
+        className={`flex-1 max-w-7xl w-full mx-auto px-2 sm:px-6 ${
+          !isUnlocked || activeTab === 'accueil' ? 'pt-3 md:pt-5' : 'pt-14 md:pt-5'
+        } pb-4`}
+      >
+        {(!isUnlocked || activeTab === 'accueil') && (
+          <LandingPage
+            isDark={theme === 'dark'}
+            language={language}
+            lastJsonFileName={lastJsonFileName}
+            onOpenSlidebar={() => {
+              if (!authUser) {
+                handleGoogleSignIn();
+                return;
+              }
+              if (!isPinVerified || isDeviceLocked) {
+                setSuperAdminAuthModalStep(
+                  isDeviceLocked ? 'device_locked' : 'pin_and_biometric'
+                );
+                setIsSuperAdminAuthModalOpen(true);
+                return;
+              }
+              if (isSuperAdminEmail(authUser.email)) {
+                navigateTo('super_admin');
+              } else {
+                setIsSlidebarOpen(true);
+              }
+            }}
+            onNavigateTab={navigateTo}
+          />
+        )}
+
+        {isRegularUserUnlocked && activeTab === 'profil' && (
+          <UserProfileView
+            userProfile={userProfile}
+            setUserProfile={setUserProfile}
+            currency={currency}
+            setCurrency={setCurrency}
+            language={language}
+            setLanguage={setLanguage}
+            onNavigateTab={navigateTo}
+            currentUser={authUser}
+            onShowToast={showToast}
+          />
+        )}
+
+        {isRegularUserUnlocked &&
+          (activeTab === 'projects' || activeTab === 'super_admin') && (
+          <DossiersAndProjectsView
+            dossiers={dossiers}
+            activeDossier={activeDossier}
+            setActiveDossierId={setActiveDossierId}
+            onCreateDossier={createDossierDirect}
+            onUpdateDossier={handleUpdateDossier}
+            onDeleteDossier={handleDeleteDossier}
+            onAddAxe={handleAddAxe}
+            onUpdateAxeName={handleUpdateAxeName}
+            onDeleteAxe={handleDeleteAxe}
+            onAddProject={handleAddProject}
+            onUpdateProjectName={handleUpdateProjectName}
+            onDeleteProject={handleDeleteProject}
+            currency={currency}
+            language={language}
+            onNavigateTab={navigateTo}
+          />
+        )}
+
+        {isRegularUserUnlocked && activeTab === 'dashboard' && renderDashboardView()}
+
+        <Suspense
+          fallback={
+            <div className="py-12 flex flex-col items-center justify-center gap-3 text-slate-600 dark:text-slate-300 animate-pulse">
+              <div className="w-7 h-7 border-3 border-[#0c4a6e] dark:border-[#90D5FF] border-t-transparent rounded-full animate-spin" />
+              <span className="text-xs font-extrabold uppercase tracking-wider">
+                {language === 'EN'
+                  ? 'Loading FAAB BUD module...'
+                  : 'Chargement fluide du module FAAB BUD...'}
+              </span>
+            </div>
+          }
+        >
+          {isRegularUserUnlocked && activeTab === 'gantt' && (
+            <GanttAndTreeView
+              dossier={activeDossier}
+              currency={currency}
+              language={language}
+              filterAxeId={filterAxeId}
+              setFilterAxeId={setFilterAxeId}
+              filterProjectId={filterProjectId}
+              setFilterProjectId={setFilterProjectId}
+              onUpdateTask={handleUpdateTask}
+            />
+          )}
+
+          {isRegularUserUnlocked &&
+            (activeTab === 'planification' || activeTab === 'raci') && (
+            <OperationalMatrices
+              mode={activeTab as 'planification' | 'raci'}
+              dossier={activeDossier}
+              currency={currency}
+              language={language}
+              filterAxeId={filterAxeId}
+              setFilterAxeId={setFilterAxeId}
+              filterProjectId={filterProjectId}
+              setFilterProjectId={setFilterProjectId}
+              onAddAxe={handleAddAxe}
+              onUpdateAxeName={handleUpdateAxeName}
+              onDeleteAxe={handleDeleteAxe}
+              onAddProject={handleAddProject}
+              onUpdateProjectName={handleUpdateProjectName}
+              onDeleteProject={handleDeleteProject}
+              onAddTaskInPhase={handleAddTaskInPhase}
+              onUpdateTask={handleUpdateTask}
+              onDeleteTask={handleDeleteTask}
+            />
+          )}
+
+          {isRegularUserUnlocked && activeTab === 'categorie' && (
+            <CategoriesActorsView
+              dossier={activeDossier}
+              dossiers={dossiers}
+              onSelectDossier={setActiveDossierId}
+              userProfile={userProfile}
+              onUpdateUserProfile={setUserProfile}
+              language={language}
+              filterAxeId={filterAxeId}
+              setFilterAxeId={setFilterAxeId}
+              filterProjectId={filterProjectId}
+              setFilterProjectId={setFilterProjectId}
+              onUpdateCategorizedActors={handleUpdateCategorizedActors}
+              onRenameActorInRaci={(oldName, newName) => {
+                updateActiveDossier(d =>
+                  renameActorInDossierTasks(d, oldName, newName)
+                );
+              }}
+              onApplyProfileToDoc={(docType, fields) => {
+                Object.entries(fields).forEach(([k, v]) => {
+                  if (v !== undefined) {
+                    handleUpdateDocField(
+                      docType,
+                      k as keyof CustomDocFields,
+                      String(v)
+                    );
+                  }
+                });
+              }}
+              onNavigateToDocGen={() => {
+                navigateTo('docgen');
+              }}
+            />
+          )}
+
+          {isRegularUserUnlocked && activeTab === 'pert' && renderPertView()}
+
+          {isRegularUserUnlocked && activeTab === 'kanban' && renderKanbanView()}
+
+          {isRegularUserUnlocked && activeTab === 'fiche' && (
+            <FicheTechniquePages
+              dossier={activeDossier}
+              userProfile={userProfile}
+              currency={currency}
+              language={language}
+            />
+          )}
+
+          {isRegularUserUnlocked &&
+            (activeTab === 'evm_dashboard' ||
+              activeTab === 'evm_ptba' ||
+              activeTab === 'evm_suivi') && (
+              <FaabGarEvmTabs
+                activeSubTab={
+                  activeTab as
+                    | 'evm_dashboard'
+                    | 'evm_ptba'
+                    | 'evm_suivi'
+                }
+                onChangeSubTab={tab => navigateTo(tab)}
+                parentDossiers={dossiers}
+                activeDossierId={activeDossier.id}
+                onSelectDossier={setActiveDossierId}
+                onUpdateDossiers={setDossiers}
+                filterAxeId={filterAxeId}
+                setFilterAxeId={setFilterAxeId}
+                filterProjectId={filterProjectId}
+                setFilterProjectId={setFilterProjectId}
+                language={language}
+                currency={currency}
+              />
+            )}
+
+          {isSuperAdminUnlocked &&
+            activeTab !== 'accueil' &&
+            authUser && (
+              <SuperAdminDashboardView
+                currentUser={authUser}
+                language={language}
+                onLockDevice={() => {
+                  setIsDeviceLocked(true);
+                  setSuperAdminAuthModalStep('device_locked');
+                  setIsSuperAdminAuthModalOpen(true);
+                }}
+                onSignOut={handleSignOut}
+                onShowToast={showToast}
+              />
+            )}
+
+          {isRegularUserUnlocked && activeTab === 'docgen' && (
+            <DocumentGeneratorView
+              dossier={activeDossier}
+              userProfile={userProfile}
+              currency={currency}
+              language={language}
+              customDocsData={activeProgramCustomDocsData}
+              onUpdateDocField={handleUpdateDocField}
+              onResetDocDefaults={handleResetDocDefaults}
+              filterAxeId={filterAxeId}
+              setFilterAxeId={setFilterAxeId}
+              filterProjectId={filterProjectId}
+              setFilterProjectId={setFilterProjectId}
+            />
+          )}
+        </Suspense>
+      </main>
+
+      {/* Modale Fiche Acteur Interne ouverte depuis l'onglet Catégorie */}
+      {isRegularUserUnlocked && isCategoryProfileModalOpen && (
+        <Suspense fallback={null}>
+          <InternalActorProfileModal
+            isOpen={isCategoryProfileModalOpen}
+            onClose={() => setIsCategoryProfileModalOpen(false)}
+            initialActorName={selectedCategoryActorName}
+            allActorsList={activeRaciContext.internalOnlyActors}
+            raciContextInfo={{
+              rList: activeRaciContext.rList,
+              aList: activeRaciContext.aList,
+              cList: activeRaciContext.cList,
+              iList: activeRaciContext.iList
+            }}
+            dossier={activeDossier}
+            userProfile={userProfile}
+            language={language}
+            currency={currency}
+            executingOrgName={
+              activeDossier.institution ||
+              userProfile.institution ||
+              'Organisation Pilote du Programme'
+            }
+            executingDepartment="Direction du Pilotage Stratégique & PMO"
+            onApplyToDoc={(docType, fields) => {
+              Object.entries(fields).forEach(([k, v]) => {
+                if (v !== undefined) {
+                  handleUpdateDocField(docType, k as keyof CustomDocFields, v);
+                }
+              });
+            }}
+            onSelectDocType={docType => {
+              navigateTo('docgen');
+            }}
+          />
+        </Suspense>
+      )}
+
+      {/* Modale Globale Scanner QR Code & Code-Barres (Contrôle d'Accès Interne & vCard) */}
+      {isRegularUserUnlocked && isGlobalScannerOpen && (
+        <Suspense fallback={null}>
+          <QrBarcodeScannerModal
+            isOpen={isGlobalScannerOpen}
+            onClose={() => setIsGlobalScannerOpen(false)}
+            dossier={activeDossier}
+            userProfile={userProfile}
+            language={language}
+          />
+        </Suspense>
+      )}
+
+      {/* Modale de Sécurité Post-Google Sign-In : Code PIN (0000 par défaut, saisie clavier appareil), Touch ID / Face ID & Réinitialisation Gmail */}
+      <SuperAdminAuthModal
+        isOpen={isSuperAdminAuthModalOpen || isDeviceLocked}
+        initialStep={
+          isDeviceLocked ? 'device_locked' : superAdminAuthModalStep
+        }
+        currentUser={authUser}
+        language={language}
+        onClose={() => {
+          if (!isDeviceLocked && isPinVerified) {
+            setIsSuperAdminAuthModalOpen(false);
+          }
+        }}
+        onAuthenticatedSuccess={(verifiedUser, assignedRole) => {
+          setAuthUser(verifiedUser);
+          void syncFirebaseUserToRegistry(verifiedUser);
+          setIsPinVerified(true);
+          setSessionPinVerifiedForUser(verifiedUser.uid, true);
+          setIsDeviceLocked(false);
+          setIsSuperAdminAuthModalOpen(false);
+
+          if (
+            assignedRole === 'super_admin' ||
+            isSuperAdminEmail(verifiedUser.email)
+          ) {
+            setActiveTab('super_admin');
+            showToast(
+              language === 'EN'
+                ? 'Welcome Super Administrator! Exclusive Console unlocked.'
+                : 'Bienvenue Super Administrateur ! Console exclusive déverrouillée.'
+            );
+          } else {
+            setActiveTab(prev =>
+              prev === 'accueil' || prev === 'super_admin'
+                ? 'projects'
+                : prev
+            );
+            showToast(
+              language === 'EN'
+                ? `Welcome! User workspace unlocked (${verifiedUser.email})`
+                : `Bienvenue ! Espace Utilisateur déverrouillé (${verifiedUser.email})`
+            );
+          }
+        }}
+        onSignOut={handleSignOut}
+      />
+
+      {/* Modale de Diagnostic Domaine Firebase non autorisé & Popups bloquées */}
+      {isAuthHelpModalOpen && (
+        <FirebaseAuthHelpModal
+          isOpen={isAuthHelpModalOpen}
+          onClose={() => setIsAuthHelpModalOpen(false)}
+          onRetryGooglePopup={() => {
+            setIsAuthHelpModalOpen(false);
+            handleDirectGooglePopupRetry();
+          }}
+          errorCode={authErrorCode}
+          errorMessage={authErrorMessage}
+          language={language}
+        />
+      )}
+
+      {/* INSTITUTIONAL FOOTER — ONLY ON HOME PAGE (accueil) OR WHEN UNCONNECTED / LOCKED */}
+      {(!isUnlocked || activeTab === 'accueil') && (
+        <footer className="relative z-10 bg-[#0c4a6e] text-white border-t-4 border-[#90D5FF] mt-12">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="shrink-0 flex items-center justify-center">
+                <AppLogo className="w-16 h-16 sm:w-20 sm:h-20" />
+              </div>
+              <div>
+                <div className="text-sm font-black uppercase tracking-wider text-white">
+                  {language === 'EN'
+                    ? 'FAAB BUD — STRATEGIC & OPERATIONAL STEERING'
+                    : 'FAAB BUD — PILOTAGE STRATÉGIQUE & OPÉRATIONNEL'}
+                </div>
+                <div className="text-xs text-[#90D5FF]">
+                  {language === 'EN'
+                    ? 'Creator & Lead Architect: KOFFIE FABIEN MICHAEL'
+                    : 'Créateur & Architecte Principal : KOFFIE FABIEN MICHAEL'}
+                </div>
+                <div className="text-[11px] text-sky-200 mt-0.5">
+                  {language === 'EN'
+                    ? 'Local IndexedDB Persistence • JSON Backup • Pure White A4 PDF Exports'
+                    : 'Persistance Locale IndexedDB • Sauvegarde JSON • Exports PDF A4 Fond Blanc Pur'}
                 </div>
               </div>
             </div>
-        </div>
-      </div>
-    );
-  };
 
-  const hasExplored = data.length > 0 || filterProcessusDossier !== 'FULL' || filterPTBADossier !== 'FULL';
-
-  return (
-    <div className="min-h-screen bg-gray-50 flex flex-col font-sans text-gray-900">
-      <header className="bg-emerald-800 text-white border-b border-emerald-900 shadow-sm px-6 py-3 flex justify-between items-center shrink-0 z-50 relative">
-        <div className="flex items-center space-x-3">
-          <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 hover:bg-emerald-700 rounded-lg transition-colors text-emerald-100 cursor-pointer">
-            <Menu className="w-5 h-5" />
-          </button>
-          <div className="flex items-center bg-white/10 px-3 py-1.5 rounded-lg border border-white/20">
-            <Building2 className="w-5 h-5 text-emerald-300 mr-2 shrink-0" />
-            <h1 className="text-base sm:text-lg font-black tracking-wider uppercase drop-shadow-md truncate max-w-xs sm:max-w-md md:max-w-xl">
-              {activeInstitution || 'VOTRE INSTITUTION'} <span className="font-medium opacity-80 ml-1 text-sm hidden sm:inline">| Suivi Budgétaire & EVM</span>
-            </h1>
-          </div>
-        </div>
-
-        <div className="flex items-center space-x-2">
-          {data.length > 0 ? (
-            <span className="text-xs bg-emerald-700/60 text-emerald-100 px-2.5 py-1 rounded-full border border-emerald-600/50 font-semibold">
-              {data.length} {data.length > 1 ? 'Programmes' : 'Programme'}
-            </span>
-          ) : (
-            <button 
-              onClick={handleLoadDemoData}
-              className="text-xs bg-emerald-700 hover:bg-emerald-600 text-white px-2.5 py-1 rounded-lg border border-emerald-500 font-semibold flex items-center transition-colors cursor-pointer"
-            >
-              <Sparkles className="w-3.5 h-3.5 mr-1 text-yellow-300" />
-              Mode Démo
-            </button>
-          )}
-        </div>
-      </header>
-
-      <div className="flex flex-1 overflow-hidden">
-        <aside className={`${isSidebarOpen ? 'w-64' : 'w-20'} bg-white border-r border-gray-200 flex flex-col transition-all duration-300 ease-in-out shrink-0 z-40 relative shadow-[4px_0_15px_-3px_rgba(0,0,0,0.05)]`}>
-          <div className="w-full px-3 py-4 flex flex-col h-full overflow-y-auto hide-scrollbar overflow-x-hidden">
-            <nav className="space-y-1.5 flex-1 text-sm font-medium">
-              <button title="Accueil" onClick={() => setActiveTab('accueil')} className={`w-full flex items-center ${isSidebarOpen ? 'px-3 space-x-3 justify-start' : 'px-0 justify-center'} py-2.5 rounded-lg transition-all cursor-pointer ${activeTab === 'accueil' ? 'bg-emerald-50 text-emerald-700 shadow-sm border border-emerald-100 font-bold' : 'text-gray-600 hover:bg-gray-50'}`}>
-                <Home className="w-5 h-5 shrink-0" />
-                {isSidebarOpen && <span className="truncate">Accueil</span>}
-              </button>
-              <button 
-                title="Tableau de Bord Cockpit EVM" 
-                onClick={() => setActiveTab('dashboard')} 
-                className={`w-full flex items-center ${isSidebarOpen ? 'px-3 space-x-3 justify-start' : 'px-0 justify-center'} py-2.5 rounded-lg transition-all cursor-pointer ${activeTab === 'dashboard' ? 'bg-emerald-50 text-emerald-700 shadow-sm border border-emerald-100 font-bold' : 'text-gray-600 hover:bg-gray-50'}`}
-              >
-                <LayoutDashboard className="w-5 h-5 shrink-0" />
-                {isSidebarOpen && <span className="truncate">Tableau de Bord</span>}
-              </button>
-              <button title="Programmes Stratégiques" onClick={() => setActiveTab('projects')} className={`w-full flex items-center ${isSidebarOpen ? 'px-3 space-x-3 justify-start' : 'px-0 justify-center'} py-2.5 rounded-lg transition-all cursor-pointer ${activeTab === 'projects' ? 'bg-emerald-50 text-emerald-700 shadow-sm border border-emerald-100 font-bold' : 'text-gray-600 hover:bg-gray-50'}`}>
-                <FlaskConical className="w-5 h-5 shrink-0" />
-                {isSidebarOpen && <span className="truncate">Programmes Stratégiques</span>}
-              </button>
-              <button 
-                title="PTBA (Prog. Annuel)" 
-                onClick={() => setActiveTab('ptba')} 
-                className={`w-full flex items-center ${isSidebarOpen ? 'px-3 space-x-3 justify-start' : 'px-0 justify-center'} py-2.5 rounded-lg transition-all cursor-pointer ${activeTab === 'ptba' ? 'bg-emerald-50 text-emerald-700 shadow-sm border border-emerald-100 font-bold' : 'text-gray-600 hover:bg-gray-50'}`}
-              >
-                <FileSpreadsheet className="w-5 h-5 shrink-0" />
-                {isSidebarOpen && <span className="truncate">PTBA (Prog. Annuel)</span>}
-              </button>
-              <button 
-                title="Suivi Scientifique & Budgétaire" 
-                onClick={() => setActiveTab('processus')} 
-                className={`w-full flex items-center ${isSidebarOpen ? 'px-3 space-x-3 justify-start' : 'px-0 justify-center'} py-2.5 rounded-lg transition-all cursor-pointer ${activeTab === 'processus' ? 'bg-emerald-50 text-emerald-700 shadow-sm border border-emerald-100 font-bold' : 'text-gray-600 hover:bg-gray-50'}`}
-              >
-                <TestTube className="w-5 h-5 shrink-0" />
-                {isSidebarOpen && <span className="truncate">Suivi EVM</span>}
-              </button>
-            </nav>
-
-            <div className="pt-4 border-t border-gray-100 text-[10px] text-gray-400">
-              {isSidebarOpen ? (
-                <div className="space-y-1">
-                  <p className="font-bold text-gray-500 uppercase tracking-wider">FAAB GAR</p>
-                  <p>Gestion Budgétaire & EVM</p>
+            <div className="flex flex-col sm:items-end items-center gap-2.5 text-center sm:text-right text-xs text-sky-200">
+              {/* Language & Currency Selectors in Footer of Homepage */}
+              <div className="flex flex-wrap items-center justify-center sm:justify-end gap-2">
+                <div className="flex items-center gap-2 bg-sky-950/80 border border-[#90D5FF]/50 rounded-xl px-3 py-1.5 shadow-sm">
+                  <Globe className="w-4 h-4 text-[#90D5FF] shrink-0" />
+                  <label
+                    htmlFor="footer-language-select"
+                    className="text-[11px] font-bold uppercase tracking-wider text-[#90D5FF]"
+                  >
+                    {language === 'EN' ? 'Language :' : 'Langue :'}
+                  </label>
+                  <select
+                    id="footer-language-select"
+                    value={language}
+                    onChange={e => setLanguage(e.target.value as LanguageCode)}
+                    className="bg-[#0c4a6e] text-white text-xs font-extrabold px-2 py-0.5 rounded-lg border border-[#90D5FF]/60 focus:outline-none focus:ring-2 focus:ring-[#90D5FF] cursor-pointer"
+                  >
+                    <option value="FR">Français (FR)</option>
+                    <option value="EN">English (EN)</option>
+                  </select>
                 </div>
-              ) : (
-                <div className="text-center font-bold text-gray-400">FG</div>
-              )}
+
+                <div className="flex items-center gap-2 bg-sky-950/80 border border-[#90D5FF]/50 rounded-xl px-3 py-1.5 shadow-sm">
+                  <DollarSign className="w-4 h-4 text-[#90D5FF] shrink-0" />
+                  <label
+                    htmlFor="footer-currency-select"
+                    className="text-[11px] font-bold uppercase tracking-wider text-[#90D5FF]"
+                  >
+                    {language === 'EN' ? 'Currency :' : 'Devise :'}
+                  </label>
+                  <select
+                    id="footer-currency-select"
+                    value={currency}
+                    onChange={e => setCurrency(e.target.value as CurrencyCode)}
+                    className="bg-[#0c4a6e] text-white text-xs font-extrabold px-2 py-0.5 rounded-lg border border-[#90D5FF]/60 focus:outline-none focus:ring-2 focus:ring-[#90D5FF] cursor-pointer"
+                  >
+                    <option value="FCFA">FCFA (XOF)</option>
+                    <option value="EUR">Euro (€ - EUR)</option>
+                    <option value="USD">Dollar ($ - USD)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <div className="font-bold text-white">
+                  © {new Date().getFullYear()} FAAB BUD •{' '}
+                  {language === 'EN' ? 'All rights reserved' : 'Tous droits réservés'}
+                </div>
+                <div className="text-[11px] text-[#90D5FF]">
+                  {language === 'EN'
+                    ? 'Universal & Multi-Project Web Application'
+                    : 'Application Web Universelle & Multi-Projets'}
+                </div>
+              </div>
             </div>
           </div>
-        </aside>
-
-        <main className="flex-1 p-6 overflow-y-auto bg-gray-50 z-10 relative">
-          {activeTab === 'accueil' && renderAccueil()}
-          {activeTab === 'dashboard' && renderDashboard()}
-          {activeTab === 'projects' && renderProjectManager()}
-          {activeTab === 'ptba' && renderPTBA()}
-          {activeTab === 'processus' && renderProcessus()}
-        </main>
-      </div>
+        </footer>
+      )}
     </div>
   );
 }
+
+export default App;

@@ -1,6 +1,8 @@
 {
-  "name": "FAAB GAR - Suivi Budgétaire & EVM",
-  "description": "Plateforme de gestion axée sur les résultats (GAR), suivi de la valeur acquise (EVM) et PTBA pour institutions et programmes stratégiques.",
+  "name": "FAAB BUD — Pilotage Stratégique, Planification & Suivi des Tâches",
+  "description": "Plateforme universelle de suivi budgétaire, pilotage EVM, décaissements, ordonnancement financier PERT/CPM et reporting institutionnel.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

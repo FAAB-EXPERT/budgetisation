@@ -1,0 +1,56 @@
+{
+  "id": "./?app=faab-bud",
+  "name": "FAAB BUD",
+  "short_name": "FAAB BUD",
+  "description": "FAAB BUD — Plateforme Universelle de Planification Stratégique, Réseau PERT/CPM, Matrice RACI, Suivi Opérationnel & Génération de 22 Documents Officiels",
+  "lang": "fr",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": [
+    "window-controls-overlay",
+    "standalone",
+    "minimal-ui"
+  ],
+  "orientation": "any",
+  "background_color": "#0c4a6e",
+  "theme_color": "#0c4a6e",
+  "categories": [
+    "productivity",
+    "business",
+    "utilities"
+  ],
+  "icons": [
+    {
+      "src": "./assets/aistudio/logo_faab_bud_1012d3d3.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./assets/aistudio/logo_faab_bud_1012d3d3.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "./assets/aistudio/logo_faab_bud_1012d3d3.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./assets/aistudio/logo_faab_bud_1012d3d3.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "./assets/aistudio/logo_faab_bud_1012d3d3.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
