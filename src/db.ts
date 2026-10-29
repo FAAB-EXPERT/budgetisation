@@ -1608,7 +1608,6 @@ export async function loadStateFromDB(): Promise<AppPersistedState> {
     'processus',
     'raci',
     'categorie',
-    'dashboard',
     'gantt',
     'pert',
     'kanban',
