@@ -826,7 +826,7 @@ export function resolveProgramRaciContext(
   const allRaciActors = Array.from(allSet);
   const hasRaciActors = allRaciActors.length > 0;
 
-  const defaultUserName = userProfile.fullName || 'Coordonnateur Général PMO';
+  const defaultUserName = userProfile.role || 'Coordonnateur Général PMO';
   const defaultUserRole =
     userProfile.role || 'Spécialiste en Gestion de Projet & Pilotage Stratégique';
 
@@ -835,7 +835,7 @@ export function resolveProgramRaciContext(
   const effectiveLeadName = !hasRaciActors
     ? defaultUserName
     : userIntervenes
-    ? defaultUserName
+    ? rActors[0] || defaultUserName
     : internalOnlyActors[0] || rActors[0] || aActors[0] || defaultUserName;
 
   const effectiveLeadRole = !hasRaciActors
@@ -849,9 +849,9 @@ export function resolveProgramRaciContext(
     : defaultUserRole;
 
   const effectiveAuthorityName =
-    aActors[0] || defaultUserName || 'Président du Comité de Pilotage (COPIL)';
+    aActors[0] || 'Président du Comité de Pilotage (COPIL)';
   const effectiveConsultedList =
-    cActors.join(', ') || `${defaultUserName} (${defaultUserRole})`;
+    cActors.join(', ') || defaultUserName;
   const effectiveInformedList =
     iActors.join(', ') ||
     userProfile.institution ||

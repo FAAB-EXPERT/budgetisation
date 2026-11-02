@@ -328,8 +328,8 @@ function mergeEvmIntoParentDossiers(
                   status: existingTask?.status || statusCast,
                   manualBlocked: existingTask?.manualBlocked ?? statusCast === 'Bloqué',
                   assignee: et.assignee || existingTask?.assignee || '',
-                  autorite: existingTask?.autorite || et.responsableTresorerie || '',
-                  bailleur: et.responsableTresorerie || existingTask?.bailleur || existingTask?.autorite || '',
+                  autorite: existingTask?.autorite || '',
+                  bailleur: et.responsableTresorerie || existingTask?.bailleur || '',
                   responsabilite:
                     et.responsabilite || existingTask?.responsabilite || '',
                   budget: fromMillionsToFCFA(et.coutPlanifie),
@@ -820,6 +820,27 @@ export const FaabGarEvmTabs: React.FC<FaabGarEvmTabsProps> = ({
     if (start > qEnd || end < qStart) return 0;
     const overlapStart = Math.max(start, qStart);
     const overlapEnd = Math.min(end, qEnd);
+    return Math.max(0, (overlapEnd - overlapStart) / (1000 * 60 * 60 * 24) + 1);
+  };
+
+  const getMonthOverlapDays = (
+    startDateStr?: string,
+    endDateStr?: string,
+    targetYear?: string,
+    monthIndex0to11?: number
+  ): number => {
+    if (!startDateStr || !endDateStr || !targetYear || monthIndex0to11 === undefined) return 0;
+    const [sYear, sMonth, sDay] = startDateStr.split('-').map(Number);
+    const [eYear, eMonth, eDay] = endDateStr.split('-').map(Number);
+    const start = new Date(sYear, sMonth - 1, sDay).getTime();
+    const end = new Date(eYear, eMonth - 1, eDay).getTime();
+
+    const mStart = new Date(parseInt(targetYear), monthIndex0to11, 1).getTime();
+    const mEnd = new Date(parseInt(targetYear), monthIndex0to11 + 1, 0).getTime();
+
+    if (start > mEnd || end < mStart) return 0;
+    const overlapStart = Math.max(start, mStart);
+    const overlapEnd = Math.min(end, mEnd);
     return Math.max(0, (overlapEnd - overlapStart) / (1000 * 60 * 60 * 24) + 1);
   };
 
@@ -1459,7 +1480,7 @@ export const FaabGarEvmTabs: React.FC<FaabGarEvmTabsProps> = ({
                 <span className="truncate">{isEn ? 'Progress' : 'Avancement'}</span>
                 <Activity className="w-3 h-3 sm:w-4 sm:h-4 text-[#0284c7] shrink-0" />
               </div>
-              <div className="mt-0.5 sm:mt-2 text-xs sm:text-2xl font-black text-slate-900 dark:text-white leading-tight truncate">
+              <div className="mt-0.5 sm:mt-1.5 text-xs sm:text-base lg:text-lg font-black text-slate-900 dark:text-white leading-tight truncate">
                 {dashGlobalProgress}%
               </div>
               <div className="mt-0.5 sm:mt-1 text-[8px] sm:text-[11px] text-slate-500 truncate leading-tight">
@@ -1484,7 +1505,7 @@ export const FaabGarEvmTabs: React.FC<FaabGarEvmTabsProps> = ({
                 <span className="truncate">{isEn ? 'Earned Value (EV)' : 'Valeur Acquise (VA)'}</span>
                 <Target className="w-3 h-3 sm:w-4 sm:h-4 text-emerald-500 shrink-0" />
               </div>
-              <div className="mt-0.5 sm:mt-2 text-xs sm:text-2xl font-black text-emerald-600 dark:text-emerald-400 leading-tight truncate">
+              <div className="mt-0.5 sm:mt-1.5 text-xs sm:text-base lg:text-lg font-black text-emerald-600 dark:text-emerald-400 leading-tight truncate">
                 {fmtBudget(totalVA)} M
               </div>
             </div>
@@ -1513,7 +1534,7 @@ export const FaabGarEvmTabs: React.FC<FaabGarEvmTabsProps> = ({
                 <span className="truncate">{isEn ? 'Budget / PV' : 'Budget / VP'}</span>
                 <DollarSign className="w-3 h-3 sm:w-4 sm:h-4 text-[#0284c7] shrink-0" />
               </div>
-              <div className="mt-0.5 sm:mt-2 text-xs sm:text-2xl font-black text-slate-900 dark:text-white leading-tight truncate">
+              <div className="mt-0.5 sm:mt-1.5 text-xs sm:text-base lg:text-lg font-black text-slate-900 dark:text-white leading-tight truncate">
                 {fmtBudget(totalVP)} M
               </div>
             </div>
@@ -1539,7 +1560,7 @@ export const FaabGarEvmTabs: React.FC<FaabGarEvmTabsProps> = ({
                 <span className="truncate">{isEn ? 'Actual Cost (AC)' : 'Coût Réel (CR)'}</span>
                 <DollarSign className="w-3 h-3 sm:w-4 sm:h-4 text-amber-500 shrink-0" />
               </div>
-              <div className="mt-0.5 sm:mt-2 text-xs sm:text-2xl font-black text-amber-600 dark:text-amber-400 leading-tight truncate">
+              <div className="mt-0.5 sm:mt-1.5 text-xs sm:text-base lg:text-lg font-black text-amber-600 dark:text-amber-400 leading-tight truncate">
                 {fmtBudget(totalCR)} M
               </div>
             </div>
@@ -1559,7 +1580,7 @@ export const FaabGarEvmTabs: React.FC<FaabGarEvmTabsProps> = ({
               <span className="truncate">{isEn ? 'EVM Indices' : 'Indices EVM'}</span>
               <Layers className="w-3 h-3 sm:w-4 sm:h-4 text-[#0284c7] shrink-0" />
             </div>
-            <div className="mt-0.5 sm:mt-1.5 text-xs sm:text-lg font-black text-slate-900 dark:text-white leading-tight truncate">
+            <div className="mt-0.5 sm:mt-1.5 text-xs sm:text-sm lg:text-base font-black text-slate-900 dark:text-white leading-tight truncate">
               {isEn ? 'CPI' : 'IPC'} : <span className={ipcStatus.color}>{IPC}</span> • {isEn ? 'SPI' : 'IPD'} :{' '}
               <span className={ipdStatus.color}>{IPD}</span>
             </div>
@@ -1574,7 +1595,7 @@ export const FaabGarEvmTabs: React.FC<FaabGarEvmTabsProps> = ({
               <span className="truncate">{isEn ? 'Disbursements' : 'Décaissements'}</span>
               <Clock className="w-3 h-3 sm:w-4 sm:h-4 text-[#0284c7] shrink-0" />
             </div>
-            <div className="mt-0.5 sm:mt-2 text-xs sm:text-2xl font-black text-[#0284c7] dark:text-[#90D5FF] leading-tight truncate">
+            <div className="mt-0.5 sm:mt-1.5 text-xs sm:text-base lg:text-lg font-black text-[#0284c7] dark:text-[#90D5FF] leading-tight truncate">
               {tauxRespectDecaissement}%
             </div>
             <div className="mt-0.5 sm:mt-1 text-[8px] sm:text-[11px] text-slate-500 truncate leading-tight">
@@ -1593,7 +1614,7 @@ export const FaabGarEvmTabs: React.FC<FaabGarEvmTabsProps> = ({
             <div className="text-[8.5px] sm:text-xs font-bold text-slate-500 dark:text-slate-400 uppercase leading-tight truncate">
               {isEn ? 'Activities & Milestones' : 'Activités & Jalons'}
             </div>
-            <div className="mt-0.5 sm:mt-2 text-xs sm:text-2xl font-black text-slate-900 dark:text-white leading-tight">
+            <div className="mt-0.5 sm:mt-1.5 text-xs sm:text-base lg:text-lg font-black text-slate-900 dark:text-white leading-tight">
               {dashStatsTotal}
             </div>
           </div>
@@ -1601,7 +1622,7 @@ export const FaabGarEvmTabs: React.FC<FaabGarEvmTabsProps> = ({
             <div className="text-[8.5px] sm:text-xs font-bold text-slate-500 dark:text-slate-400 uppercase leading-tight truncate">
               {isEn ? 'Completed' : 'Terminées'}
             </div>
-            <div className="mt-0.5 sm:mt-2 text-xs sm:text-2xl font-black text-emerald-600 dark:text-emerald-400 leading-tight">
+            <div className="mt-0.5 sm:mt-1.5 text-xs sm:text-base lg:text-lg font-black text-emerald-600 dark:text-emerald-400 leading-tight">
               {completedCount}
             </div>
           </div>
@@ -1609,7 +1630,7 @@ export const FaabGarEvmTabs: React.FC<FaabGarEvmTabsProps> = ({
             <div className="text-[8.5px] sm:text-xs font-bold text-slate-500 dark:text-slate-400 uppercase leading-tight truncate">
               {isEn ? 'In Progress' : 'En Cours'}
             </div>
-            <div className="mt-0.5 sm:mt-2 text-xs sm:text-2xl font-black text-[#0284c7] dark:text-[#90D5FF] leading-tight">
+            <div className="mt-0.5 sm:mt-1.5 text-xs sm:text-base lg:text-lg font-black text-[#0284c7] dark:text-[#90D5FF] leading-tight">
               {inProgressCount}
             </div>
           </div>
@@ -1617,7 +1638,7 @@ export const FaabGarEvmTabs: React.FC<FaabGarEvmTabsProps> = ({
             <div className="text-[8.5px] sm:text-xs font-bold text-slate-500 dark:text-slate-400 uppercase leading-tight truncate">
               {isEn ? 'Blocked' : 'Bloqués'}
             </div>
-            <div className="mt-0.5 sm:mt-2 text-xs sm:text-2xl font-black text-rose-600 dark:text-rose-400 leading-tight">
+            <div className="mt-0.5 sm:mt-1.5 text-xs sm:text-base lg:text-lg font-black text-rose-600 dark:text-rose-400 leading-tight">
               {blockedCount}
             </div>
           </div>
@@ -1626,7 +1647,7 @@ export const FaabGarEvmTabs: React.FC<FaabGarEvmTabsProps> = ({
               <span className="truncate">{isEn ? 'Disbursement Delay' : 'Retard Décaissement'}</span>
               <Clock className="w-3 h-3 sm:w-4 sm:h-4 text-amber-500 shrink-0" />
             </div>
-            <div className="mt-0.5 sm:mt-2 text-xs sm:text-2xl font-black text-amber-600 dark:text-amber-400 leading-tight">
+            <div className="mt-0.5 sm:mt-1.5 text-xs sm:text-base lg:text-lg font-black text-amber-600 dark:text-amber-400 leading-tight">
               {delayedDisbursementCount}
             </div>
             <div className="mt-0.5 sm:mt-1 text-[8px] sm:text-[11px] text-slate-500 truncate leading-tight">
@@ -2281,7 +2302,30 @@ export const FaabGarEvmTabs: React.FC<FaabGarEvmTabsProps> = ({
     });
 
     const isAllYears = filterPTBAYear === 'ALL';
-    const ptbaColSpan = isAllYears ? 8 : 10;
+    const isPTTMode = !isAllYears && filterPTBAQuarter !== 'FULL';
+    const selectedQuarterIdx =
+      filterPTBAQuarter === 'T1'
+        ? 0
+        : filterPTBAQuarter === 'T2'
+        ? 1
+        : filterPTBAQuarter === 'T3'
+        ? 2
+        : 3;
+    const pttMonthLabelsFr = [
+      ['Mois 1 (Janv.)', 'Mois 2 (Févr.)', 'Mois 3 (Mars)'],
+      ['Mois 1 (Avril)', 'Mois 2 (Mai)', 'Mois 3 (Juin)'],
+      ['Mois 1 (Juil.)', 'Mois 2 (Août)', 'Mois 3 (Sept.)'],
+      ['Mois 1 (Oct.)', 'Mois 2 (Nov.)', 'Mois 3 (Déc.)']
+    ][selectedQuarterIdx];
+    const pttMonthLabelsEn = [
+      ['Month 1 (Jan)', 'Month 2 (Feb)', 'Month 3 (Mar)'],
+      ['Month 1 (Apr)', 'Month 2 (May)', 'Month 3 (Jun)'],
+      ['Month 1 (Jul)', 'Month 2 (Aug)', 'Month 3 (Sep)'],
+      ['Month 1 (Oct)', 'Month 2 (Nov)', 'Month 3 (Dec)']
+    ][selectedQuarterIdx];
+    const pttMonthLabels = isEn ? pttMonthLabelsEn : pttMonthLabelsFr;
+
+    const ptbaColSpan = isAllYears ? 8 : isPTTMode ? 9 : 10;
     const phasesToDisplay =
       filterPTBAPhase === 'ALL'
         ? STANDARD_PHASES
@@ -2296,6 +2340,10 @@ export const FaabGarEvmTabs: React.FC<FaabGarEvmTabsProps> = ({
     let globalTotalY1 = 0,
       globalTotalY2 = 0,
       globalTotalY3 = 0;
+    let globalTotalPTTQuarter = 0,
+      globalTotalPTTM1 = 0,
+      globalTotalPTTM2 = 0,
+      globalTotalPTTM3 = 0;
 
     return (
       <div className="space-y-2 sm:space-y-3">
@@ -2305,11 +2353,27 @@ export const FaabGarEvmTabs: React.FC<FaabGarEvmTabsProps> = ({
             <h2 className="text-[10px] sm:text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight flex items-center gap-1 truncate">
               <FileSpreadsheet className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#0284c7] dark:text-[#90D5FF] shrink-0" />
               <span>
-                PTBA — {isAllYears ? (isEn ? `Overall Period (${y1}-${y3})` : `Période Globale (${y1}-${y3})`) : (isEn ? `Fiscal Year ${filterPTBAYear}` : `Exercice ${filterPTBAYear}`)}
+                {isPTTMode
+                  ? isEn
+                    ? `PTT (Quarterly Work Plan) — Fiscal Year ${filterPTBAYear} • ${filterPTBAQuarter.replace('T', 'Q')}`
+                    : `PTT (Plan de Travail Trimestriel) — Exercice ${filterPTBAYear} • ${filterPTBAQuarter}`
+                  : `PTBA — ${
+                      isAllYears
+                        ? isEn
+                          ? `Overall Period (${y1}-${y3})`
+                          : `Période Globale (${y1}-${y3})`
+                        : isEn
+                        ? `Fiscal Year ${filterPTBAYear}`
+                        : `Exercice ${filterPTBAYear}`
+                    }`}
               </span>
             </h2>
             <p className="hidden xl:block text-[10px] text-slate-500 dark:text-slate-400 truncate">
-              {isEn
+              {isPTTMode
+                ? isEn
+                  ? `Quarterly Work Plan (PTT) — Monthly operational & budget breakdown (${pttMonthLabels.join(' / ')})`
+                  : `Plan de Travail Trimestriel (PTT) — Ventilation opérationnelle et budgétaire mensuelle (${pttMonthLabels.join(' / ')})`
+                : isEn
                 ? 'Annual Work Plan and Budget — Quarterly and multi-year breakdown'
                 : 'Plan de Travail et Budget Annuel — Ventilation trimestrielle et pluriannuelle'}
             </p>
@@ -2541,6 +2605,35 @@ export const FaabGarEvmTabs: React.FC<FaabGarEvmTabsProps> = ({
                         {isEn ? `Year ${y3}` : `Année ${y3}`}
                       </th>
                     </>
+                  ) : isPTTMode ? (
+                    <>
+                      <th
+                        style={{ position: 'sticky', top: 0 }}
+                        className="sticky top-0 z-30 bg-[#0c4a6e] text-center border-r border-sky-800 border-b-2 border-[#90D5FF]"
+                      >
+                        {isEn
+                          ? `PTT ${filterPTBAQuarter.replace('T', 'Q')} (${filterPTBAYear})`
+                          : `PTT ${filterPTBAQuarter} (${filterPTBAYear})`}
+                      </th>
+                      <th
+                        style={{ position: 'sticky', top: 0 }}
+                        className="sticky top-0 z-30 bg-[#0c4a6e] text-center border-r border-sky-800 border-b-2 border-[#90D5FF]"
+                      >
+                        {pttMonthLabels[0]}
+                      </th>
+                      <th
+                        style={{ position: 'sticky', top: 0 }}
+                        className="sticky top-0 z-30 bg-[#0c4a6e] text-center border-r border-sky-800 border-b-2 border-[#90D5FF]"
+                      >
+                        {pttMonthLabels[1]}
+                      </th>
+                      <th
+                        style={{ position: 'sticky', top: 0 }}
+                        className="sticky top-0 z-30 bg-[#0c4a6e] text-center border-b-2 border-[#90D5FF]"
+                      >
+                        {pttMonthLabels[2]}
+                      </th>
+                    </>
                   ) : (
                     <>
                       <th
@@ -2639,6 +2732,7 @@ export const FaabGarEvmTabs: React.FC<FaabGarEvmTabsProps> = ({
                     });
 
                   let phaseTotalVP = 0;
+                  let phaseTotalPTTQuarter = 0;
 
                   const processedPhaseItems = phaseItems.map(item => {
                     const t = item.task;
@@ -2664,6 +2758,10 @@ export const FaabGarEvmTabs: React.FC<FaabGarEvmTabsProps> = ({
                     let y1B = 0,
                       y2B = 0,
                       y3B = 0;
+                    let pttQuarterB = 0,
+                      pttM1B = 0,
+                      pttM2B = 0,
+                      pttM3B = 0;
 
                     if (isAllYears) {
                       y1B = vp * (getYearOverlapDays(t.startDate, t.endDate, y1) / totalDays);
@@ -2687,9 +2785,27 @@ export const FaabGarEvmTabs: React.FC<FaabGarEvmTabsProps> = ({
                         (getQuarterOverlapDays(t.startDate, t.endDate, filterPTBAYear, 3) /
                           totalDays);
                       yearB = q1B + q2B + q3B + q4B;
+
+                      if (isPTTMode) {
+                        const baseM = selectedQuarterIdx * 3;
+                        pttM1B =
+                          vp *
+                          (getMonthOverlapDays(t.startDate, t.endDate, filterPTBAYear, baseM) /
+                            totalDays);
+                        pttM2B =
+                          vp *
+                          (getMonthOverlapDays(t.startDate, t.endDate, filterPTBAYear, baseM + 1) /
+                            totalDays);
+                        pttM3B =
+                          vp *
+                          (getMonthOverlapDays(t.startDate, t.endDate, filterPTBAYear, baseM + 2) /
+                            totalDays);
+                        pttQuarterB = pttM1B + pttM2B + pttM3B;
+                      }
                     }
 
                     phaseTotalVP += vp;
+                    phaseTotalPTTQuarter += pttQuarterB;
                     globalTotalVP += vp;
                     globalTotalYear += yearB;
                     globalTotalQ1 += q1B;
@@ -2699,6 +2815,10 @@ export const FaabGarEvmTabs: React.FC<FaabGarEvmTabsProps> = ({
                     globalTotalY1 += y1B;
                     globalTotalY2 += y2B;
                     globalTotalY3 += y3B;
+                    globalTotalPTTQuarter += pttQuarterB;
+                    globalTotalPTTM1 += pttM1B;
+                    globalTotalPTTM2 += pttM2B;
+                    globalTotalPTTM3 += pttM3B;
 
                     return {
                       ...item,
@@ -2710,7 +2830,11 @@ export const FaabGarEvmTabs: React.FC<FaabGarEvmTabsProps> = ({
                       q4B,
                       y1B,
                       y2B,
-                      y3B
+                      y3B,
+                      pttQuarterB,
+                      pttM1B,
+                      pttM2B,
+                      pttM3B
                     };
                   });
 
@@ -2746,7 +2870,9 @@ export const FaabGarEvmTabs: React.FC<FaabGarEvmTabsProps> = ({
 
                             <div className="flex items-center gap-2">
                               <span className="text-[9px] sm:text-[10px] font-mono font-bold text-slate-600 dark:text-slate-300">
-                                {isEn ? 'Subtotal: ' : 'Sous-total : '} {fmtBudget(phaseTotalVP)} M
+                                {isPTTMode
+                                  ? `${isEn ? `Subtotal PTT (${filterPTBAQuarter.replace('T', 'Q')}): ` : `Sous-total PTT (${filterPTBAQuarter}) : `} ${fmtBudget(phaseTotalPTTQuarter)} M`
+                                  : `${isEn ? 'Subtotal: ' : 'Sous-total : '} ${fmtBudget(phaseTotalVP)} M`}
                               </span>
                             </div>
                           </div>
@@ -2862,6 +2988,40 @@ export const FaabGarEvmTabs: React.FC<FaabGarEvmTabsProps> = ({
                                       {item.y3B > 0 ? `${fmtBudget(item.y3B)} M` : '—'}
                                     </td>
                                   </>
+                                ) : isPTTMode ? (
+                                  <>
+                                    <td className="align-top text-center font-mono font-bold text-[10px] text-blue-700 dark:text-blue-300 border-r border-slate-200 dark:border-slate-800 border-b border-slate-200 dark:border-slate-800">
+                                      {fmtBudget(item.pttQuarterB)}{' '}
+                                      {item.pttQuarterB > 0 ? 'M' : ''}
+                                    </td>
+                                    <td
+                                      className={`align-top text-center font-mono text-[10px] border-r border-slate-200 dark:border-slate-800 border-b border-slate-200 dark:border-slate-800 ${
+                                        item.pttM1B > 0
+                                          ? 'font-bold text-[#0c4a6e] dark:text-[#90D5FF]'
+                                          : 'text-slate-400'
+                                      }`}
+                                    >
+                                      {item.pttM1B > 0 ? `${fmtBudget(item.pttM1B)} M` : '—'}
+                                    </td>
+                                    <td
+                                      className={`align-top text-center font-mono text-[10px] border-r border-slate-200 dark:border-slate-800 border-b border-slate-200 dark:border-slate-800 ${
+                                        item.pttM2B > 0
+                                          ? 'font-bold text-[#0c4a6e] dark:text-[#90D5FF]'
+                                          : 'text-slate-400'
+                                      }`}
+                                    >
+                                      {item.pttM2B > 0 ? `${fmtBudget(item.pttM2B)} M` : '—'}
+                                    </td>
+                                    <td
+                                      className={`align-top text-center font-mono text-[10px] border-b border-slate-200 dark:border-slate-800 ${
+                                        item.pttM3B > 0
+                                          ? 'font-bold text-[#0c4a6e] dark:text-[#90D5FF]'
+                                          : 'text-slate-400'
+                                      }`}
+                                    >
+                                      {item.pttM3B > 0 ? `${fmtBudget(item.pttM3B)} M` : '—'}
+                                    </td>
+                                  </>
                                 ) : (
                                   <>
                                     <td className="align-top text-center font-mono font-bold text-[10px] text-blue-700 dark:text-blue-300 border-r border-slate-200 dark:border-slate-800 border-b border-slate-200 dark:border-slate-800">
@@ -2916,7 +3076,13 @@ export const FaabGarEvmTabs: React.FC<FaabGarEvmTabsProps> = ({
               <tfoot className="bg-[#0c4a6e] text-white font-black sticky bottom-0 z-30">
                 <tr>
                   <td colSpan={4} className="text-right uppercase text-[10px] border-r border-sky-800">
-                    {isEn ? 'Grand Total Programmed' : 'Total Global Programmé'} ({isAllYears ? `${y1}-${y3}` : filterPTBAYear})
+                    {isPTTMode
+                      ? isEn
+                        ? `Grand Total Programmed PTT (${filterPTBAYear} - ${filterPTBAQuarter.replace('T', 'Q')})`
+                        : `Total Global Programmé PTT (${filterPTBAYear} - ${filterPTBAQuarter})`
+                      : `${isEn ? 'Grand Total Programmed' : 'Total Global Programmé'} (${
+                          isAllYears ? `${y1}-${y3}` : filterPTBAYear
+                        })`}
                   </td>
                   <td className="text-center font-mono text-[10px] text-[#90D5FF] border-r border-sky-800">
                     {fmtBudget(globalTotalVP)} M
@@ -2931,6 +3097,21 @@ export const FaabGarEvmTabs: React.FC<FaabGarEvmTabsProps> = ({
                       </td>
                       <td className="text-center font-mono text-[10px] text-[#90D5FF]">
                         {fmtBudget(globalTotalY3)} M
+                      </td>
+                    </>
+                  ) : isPTTMode ? (
+                    <>
+                      <td className="text-center font-mono text-[10px] text-blue-200 border-r border-sky-800">
+                        {fmtBudget(globalTotalPTTQuarter)} M
+                      </td>
+                      <td className="text-center font-mono text-[10px] text-[#90D5FF] border-r border-sky-800">
+                        {fmtBudget(globalTotalPTTM1)} M
+                      </td>
+                      <td className="text-center font-mono text-[10px] text-[#90D5FF] border-r border-sky-800">
+                        {fmtBudget(globalTotalPTTM2)} M
+                      </td>
+                      <td className="text-center font-mono text-[10px] text-[#90D5FF]">
+                        {fmtBudget(globalTotalPTTM3)} M
                       </td>
                     </>
                   ) : (
@@ -3346,7 +3527,7 @@ export const FaabGarEvmTabs: React.FC<FaabGarEvmTabsProps> = ({
                     {isEn ? 'Earned Value' : 'Valeur Acquise'}
                   </th>
                   <th className="bg-[#0c4a6e] text-center border-r border-sky-800 border-b border-sky-800">
-                    {isEn ? 'Budget Progress' : 'Progrès Budget'}
+                    {isEn ? '% Earned Value' : '% valeur acquise'}
                   </th>
                   <th className="bg-[#0c4a6e] text-center border-b border-sky-800">
                     {isEn ? 'Actual Cost' : 'Coût Réel'}
@@ -3424,12 +3605,9 @@ export const FaabGarEvmTabs: React.FC<FaabGarEvmTabsProps> = ({
                         : t.status === 'Terminé' || t.valideVA
                         ? vp
                         : 0;
-                    const budgetExecVal = Math.max(decaisse, va);
                     const avancement =
                       vp > 0
-                        ? Math.min(100, Math.round((budgetExecVal / vp) * 100))
-                        : budgetExecVal > 0
-                        ? 100
+                        ? Math.round((va / vp) * 100)
                         : 0;
 
                     phaseVP += vp;

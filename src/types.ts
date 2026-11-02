@@ -380,6 +380,7 @@ export type ActorGovernanceInstance =
 export interface CategorizedActor {
   id: string;
   name: string;
+  titularName?: string;
   category: ActorCategoryType;
   dossierId: string;
   axeId: string; // 'ALL' or specific Axe ID

@@ -1670,7 +1670,7 @@ export function App() {
                   startDate: todayISO,
                   endDate: todayISO,
                   status: 'En cours',
-                  assignee: userProfile.fullName || 'Chef de Projet',
+                  assignee: userProfile.role || 'Coordonnateur Général PMO',
                   autorite: 'Comité de Pilotage (COPIL)',
                   consulte: 'Experts Techniques',
                   informe: 'Parties Prenantes',
@@ -1825,7 +1825,7 @@ export function App() {
       status: 'À faire',
       assignee:
         userProfile.intervenesAsProgramActor !== false
-          ? userProfile.fullName || ''
+          ? userProfile.role || 'Coordonnateur Général PMO'
           : '',
       autorite: '',
       consulte: '',
@@ -1835,17 +1835,26 @@ export function App() {
       antecedent: '—'
     };
 
-    updateActiveDossier(d => ({
-      ...d,
-      axes: (d.axes || []).map(a => ({
-        ...a,
-        projects: (a.projects || []).map(p =>
-          p.id === projectId
-            ? { ...p, tasks: [...(p.tasks || []), newTask] }
-            : p
+    updateActiveDossier(d => {
+      const nextDossier: Dossier = {
+        ...d,
+        axes: (d.axes || []).map(a => ({
+          ...a,
+          projects: (a.projects || []).map(p =>
+            p.id === projectId
+              ? { ...p, tasks: [...(p.tasks || []), newTask] }
+              : p
+          )
+        }))
+      };
+      return {
+        ...nextDossier,
+        categorizedActors: ensureDossierCategorizedActors(
+          nextDossier,
+          userProfile
         )
-      }))
-    }));
+      };
+    });
     showToast(
       `${type === 'jalon' ? 'Jalon' : 'Activité'} ajouté(e) dans la phase « ${phaseName} ».`
     );
@@ -1868,39 +1877,57 @@ export function App() {
     taskId: string,
     patch: Partial<Task>
   ) => {
-    updateActiveDossier(d => ({
-      ...d,
-      axes: (d.axes || []).map(a => ({
-        ...a,
-        projects: (a.projects || []).map(p =>
-          p.id === projectId
-            ? {
-                ...p,
-                tasks: (p.tasks || []).map(tk =>
-                  tk.id === taskId ? { ...tk, ...patch } : tk
-                )
-              }
-            : p
+    updateActiveDossier(d => {
+      const nextDossier: Dossier = {
+        ...d,
+        axes: (d.axes || []).map(a => ({
+          ...a,
+          projects: (a.projects || []).map(p =>
+            p.id === projectId
+              ? {
+                  ...p,
+                  tasks: (p.tasks || []).map(tk =>
+                    tk.id === taskId ? { ...tk, ...patch } : tk
+                  )
+                }
+              : p
+          )
+        }))
+      };
+      return {
+        ...nextDossier,
+        categorizedActors: ensureDossierCategorizedActors(
+          nextDossier,
+          userProfile
         )
-      }))
-    }));
+      };
+    });
   };
 
   const handleDeleteTask = (projectId: string, taskId: string) => {
-    updateActiveDossier(d => ({
-      ...d,
-      axes: (d.axes || []).map(a => ({
-        ...a,
-        projects: (a.projects || []).map(p =>
-          p.id === projectId
-            ? {
-                ...p,
-                tasks: (p.tasks || []).filter(tk => tk.id !== taskId)
-              }
-            : p
+    updateActiveDossier(d => {
+      const nextDossier: Dossier = {
+        ...d,
+        axes: (d.axes || []).map(a => ({
+          ...a,
+          projects: (a.projects || []).map(p =>
+            p.id === projectId
+              ? {
+                  ...p,
+                  tasks: (p.tasks || []).filter(tk => tk.id !== taskId)
+                }
+              : p
+          )
+        }))
+      };
+      return {
+        ...nextDossier,
+        categorizedActors: ensureDossierCategorizedActors(
+          nextDossier,
+          userProfile
         )
-      }))
-    }));
+      };
+    });
   };
 
   const handleMoveTaskInKanban = (
@@ -3032,18 +3059,23 @@ export function App() {
         {renderMacroFilterBar()}
 
         <div className="bg-white dark:bg-slate-900 rounded-lg sm:rounded-xl border border-slate-200 dark:border-slate-800 p-2 sm:p-3 shadow-sm">
-          <h2 className="text-xs sm:text-base font-black text-slate-900 dark:text-white uppercase tracking-tight flex items-center gap-1.5 sm:gap-2">
-            <Kanban className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#0284c7] dark:text-[#90D5FF] shrink-0" />
-            <span>
-              {language === 'EN'
-                ? 'Interactive Kanban Board (Driven by Budget & Disbursement)'
-                : 'Tableau Kanban Interactif (Fonction du Budget & du Décaissement)'}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-xs sm:text-base font-black text-slate-900 dark:text-white uppercase tracking-tight flex items-center gap-1.5 sm:gap-2">
+              <Kanban className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#0284c7] dark:text-[#90D5FF] shrink-0" />
+              <span>
+                {language === 'EN'
+                  ? 'Kanban Board — Budget & Disbursement Tracking'
+                  : 'Tableau Kanban — Suivi du Budget & du Décaissement'}
+              </span>
+            </h2>
+            <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-[9px] sm:text-[10px] font-black uppercase text-[#0c4a6e] dark:text-[#90D5FF]">
+              {language === 'EN' ? 'Read-Only Consultation Mode' : 'Mode Consultation (Lecture Seule)'}
             </span>
-          </h2>
-          <p className="text-[9.5px] sm:text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
+          </div>
+          <p className="text-[9.5px] sm:text-[11px] text-slate-500 dark:text-slate-400 leading-snug mt-1">
             {language === 'EN'
-              ? 'Move a budget line across disbursement columns to automatically update its disbursed amount, earned value, and remaining balance.'
-              : 'Déplacez une ligne budgétaire d’une colonne à une autre pour mettre à jour automatiquement le montant décaissé, la valeur acquise et le reste à décaisser.'}
+              ? 'Real-time overview of budget lines and milestones according to disbursement stage (strictly view-only).'
+              : 'Consultation synthétique et temps réel des lignes budgétaires et jalons selon leur stade de décaissement (mode consultation sans modification).'}
           </p>
         </div>
 
@@ -3155,24 +3187,23 @@ export function App() {
                           </div>
                         </div>
 
-                        <div className="pt-1.5 sm:pt-2 border-t border-slate-100 dark:border-slate-700 flex flex-wrap gap-1">
-                          {columns
-                            .filter(c => c.status !== col.status)
-                            .map(targetCol => (
-                              <button
-                                key={targetCol.status}
-                                onClick={() =>
-                                  handleMoveTaskInKanban(
-                                    projectId,
-                                    task.id,
-                                    targetCol.status
-                                  )
-                                }
-                                className="px-1.5 sm:px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700 hover:bg-[#90D5FF] hover:text-slate-950 text-[8.5px] sm:text-[9px] font-bold text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
-                              >
-                                → {targetCol.title}
-                              </button>
-                            ))}
+                        <div className="pt-1.5 sm:pt-2 border-t border-slate-100 dark:border-slate-700 flex items-center justify-between">
+                          <span className="text-[8.5px] sm:text-[9.5px] font-bold text-slate-400 dark:text-slate-500">
+                            {language === 'EN' ? 'Status:' : 'Statut :'}
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded text-[8.5px] sm:text-[9.5px] font-black ${
+                              col.status === 'Terminé'
+                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                : col.status === 'En cours'
+                                ? 'bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-[#90D5FF]'
+                                : col.status === 'Bloqué'
+                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                                : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                            }`}
+                          >
+                            {col.title}
+                          </span>
                         </div>
                       </div>
                     );

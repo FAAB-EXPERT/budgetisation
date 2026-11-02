@@ -1533,7 +1533,7 @@ export const SlideDeckWorkspace: React.FC<SlideDeckWorkspaceProps> = ({
               </div>
 
               {/* Éditeur tabulaire de la matrice active */}
-              <div className="rounded-lg border border-slate-200 bg-white p-2.5 overflow-x-auto">
+              <div className="rounded-lg border border-slate-200 bg-white p-2.5 overflow-x-auto max-h-[600px]">
                 <div className="flex items-center justify-between mb-2">
                   <div>
                     <h4 className="text-[11px] font-black text-[#0c4a6e]">
@@ -1543,66 +1543,70 @@ export const SlideDeckWorkspace: React.FC<SlideDeckWorkspaceProps> = ({
                       Réf. normative : {currentMatrixDef.normativeRef}
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleAddMatrixRow(activeMatrixTab)}
-                    className="px-2.5 py-1 rounded-md bg-[#0c4a6e] text-[#90D5FF] text-[10px] font-extrabold flex items-center gap-1 cursor-pointer"
-                  >
-                    <Plus className="w-3 h-3" />
-                    Ajouter ligne
-                  </button>
                 </div>
 
                 <table className="w-full border-collapse text-left">
-                  <thead>
+                  <thead className="sticky top-0 z-10">
                     <tr className="bg-slate-100 text-slate-700">
-                      {currentMatrixDef.columns.map(col => (
-                        <th
-                          key={col.key}
-                          className="px-2 py-1 text-[9px] font-extrabold uppercase border border-slate-200"
-                        >
-                          {col.label}
-                        </th>
-                      ))}
-                      <th className="px-2 py-1 text-[9px] font-extrabold uppercase border border-slate-200 w-8">
-                        Suppr.
-                      </th>
+                      {currentMatrixDef.columns.map(col => {
+                        const enlargedMinWidth =
+                          col.inputType === 'textarea'
+                            ? Math.max(Math.round((col.minWidthPx || 220) * 1.4), 280)
+                            : col.inputType === 'text'
+                            ? Math.max(Math.round((col.minWidthPx || 160) * 1.4), 220)
+                            : Math.max(Math.round((col.minWidthPx || 130) * 1.35), 165);
+                        return (
+                          <th
+                            key={col.key}
+                            style={{ minWidth: `${enlargedMinWidth}px` }}
+                            className="px-2.5 py-2 text-[10px] font-extrabold uppercase border border-slate-200 whitespace-normal leading-snug"
+                          >
+                            {col.label}
+                          </th>
+                        );
+                      })}
                     </tr>
                   </thead>
                   <tbody>
                     {currentMatrixRows.map((row, rIdx) => (
                       <tr key={rIdx} className="hover:bg-sky-50/30">
-                        {currentMatrixDef.columns.map(col => (
-                          <td
-                            key={col.key}
-                            className="p-1 border border-slate-200"
-                          >
-                            <input
-                              type="text"
-                              value={row[col.key] || ''}
-                              onChange={e =>
-                                handleMatrixCellChange(
-                                  activeMatrixTab,
-                                  rIdx,
-                                  col.key,
-                                  e.target.value
-                                )
-                              }
-                              className="w-full px-1.5 py-1 text-[10px] bg-transparent focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#0284c7] rounded-xs"
-                            />
-                          </td>
-                        ))}
-                        <td className="p-1 border border-slate-200 text-center">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleRemoveMatrixRow(activeMatrixTab, rIdx)
-                            }
-                            className="p-1 text-rose-500 hover:bg-rose-50 rounded-xs cursor-pointer"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        </td>
+                        {currentMatrixDef.columns.map(col => {
+                          const val = row[col.key] || '';
+                          const enlargedMinWidth =
+                            col.inputType === 'textarea'
+                              ? Math.max(Math.round((col.minWidthPx || 220) * 1.4), 280)
+                              : col.inputType === 'text'
+                              ? Math.max(Math.round((col.minWidthPx || 160) * 1.4), 220)
+                              : Math.max(Math.round((col.minWidthPx || 130) * 1.35), 165);
+                          const autoRows = Math.min(
+                            8,
+                            Math.max(
+                              col.inputType === 'textarea' ? 3 : 2,
+                              Math.ceil(val.length / 30)
+                            )
+                          );
+                          return (
+                            <td
+                              key={col.key}
+                              style={{ minWidth: `${enlargedMinWidth}px` }}
+                              className="p-2 border border-slate-200 align-top"
+                            >
+                              <textarea
+                                rows={autoRows}
+                                value={val}
+                                onChange={e =>
+                                  handleMatrixCellChange(
+                                    activeMatrixTab,
+                                    rIdx,
+                                    col.key,
+                                    e.target.value
+                                  )
+                                }
+                                className="w-full px-2 py-1.5 text-[11px] leading-relaxed whitespace-pre-wrap break-words bg-transparent focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#0284c7] rounded-xs"
+                              />
+                            </td>
+                          );
+                        })}
                       </tr>
                     ))}
                   </tbody>

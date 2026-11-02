@@ -17,7 +17,8 @@ import {
   Phone,
   Mail,
   MapPin,
-  Building2
+  Building2,
+  User
 } from 'lucide-react';
 import {
   ACTOR_CATEGORIES_ORDERED,
@@ -30,7 +31,7 @@ import {
   CustomDocFields,
   InstitutionalDocType
 } from '../types';
-import { ensureDossierCategorizedActors } from '../db';
+import { ensureDossierCategorizedActors, mapPersonalNameToPoste } from '../db';
 import { InternalActorProfileModal } from './InternalActorProfileModal';
 import { QrBarcodeScannerModal } from './QrBarcodeScannerModal';
 
@@ -121,7 +122,7 @@ export const CategoriesActorsView: React.FC<CategoriesActorsViewProps> = ({
 
   // Modales Fiche Acteur Interne (CV, Carte, Badge) & Scanner QR/Code-barres
   const [profileModalActorName, setProfileModalActorName] = useState<string>(
-    userProfile.fullName
+    'Coordonnateur Général PMO'
   );
   const [isProfileModalOpen, setIsProfileModalOpen] = useState<boolean>(false);
   const [isScannerModalOpen, setIsScannerModalOpen] = useState<boolean>(false);
@@ -137,7 +138,10 @@ export const CategoriesActorsView: React.FC<CategoriesActorsViewProps> = ({
   // Liste complète synchronisée à 100 % avec l'onglet RACI du programme actif
   const allProgramActors = useMemo<CategorizedActor[]>(() => {
     if (!dossier) return [];
-    return ensureDossierCategorizedActors(dossier, userProfile);
+    return ensureDossierCategorizedActors(dossier, userProfile).map(act => ({
+      ...act,
+      name: mapPersonalNameToPoste(act.name, userProfile) || act.name
+    }));
   }, [dossier, userProfile]);
 
   // Axes et projets disponibles pour le Programme actif
@@ -160,8 +164,12 @@ export const CategoriesActorsView: React.FC<CategoriesActorsViewProps> = ({
     const splitNames = (raw?: string): string[] => {
       if (!raw) return [];
       return raw
-        .split(',')
-        .map(s => s.trim().toLowerCase())
+        .split(/[,;]/)
+        .map(s =>
+          (mapPersonalNameToPoste(s.trim(), userProfile) || s.trim())
+            .trim()
+            .toLowerCase()
+        )
         .filter(
           s =>
             s.length > 0 &&
@@ -189,7 +197,7 @@ export const CategoriesActorsView: React.FC<CategoriesActorsViewProps> = ({
     });
 
     return set;
-  }, [programAxes, filterAxeId, filterProjectId]);
+  }, [programAxes, filterAxeId, filterProjectId, userProfile]);
 
   // Filtrage hiérarchique Programme (Global) -> Axe -> Projet + Catégorie + Recherche
   const filteredActors = useMemo<CategorizedActor[]>(() => {
@@ -265,12 +273,16 @@ export const CategoriesActorsView: React.FC<CategoriesActorsViewProps> = ({
   // Liste exclusive des acteurs "Interne" pour la modale CV / Carte de Visite / Badge
   const internalOnlyActorNames = useMemo<string[]>(() => {
     const names = new Set<string>();
-    if (userProfile.fullName) names.add(userProfile.fullName);
+    const defaultInternalRole = mapPersonalNameToPoste(userProfile.role, userProfile) || 'Coordonnateur Général PMO';
+    names.add(defaultInternalRole);
     allProgramActors
       .filter(a => a.category === 'Interne')
-      .forEach(a => names.add(a.name));
+      .forEach(a => {
+        const cleanName = mapPersonalNameToPoste(a.name, userProfile) || a.name;
+        names.add(cleanName);
+      });
     return Array.from(names);
-  }, [allProgramActors, userProfile.fullName]);
+  }, [allProgramActors, userProfile]);
 
   const raciContextForInternalModal = useMemo(() => {
     const rList: string[] = [];
@@ -396,81 +408,6 @@ export const CategoriesActorsView: React.FC<CategoriesActorsViewProps> = ({
         </div>
       )}
 
-      {/* EN-TÊTE INSTITUTIONNEL DE L'ONGLET « CATÉGORIE » */}
-      <div className="bg-gradient-to-r from-[#0c4a6e] via-[#075985] to-[#0369a1] rounded-2xl p-4 sm:p-5 text-white shadow-lg border border-sky-400/30">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="space-y-1.5 min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="px-2.5 py-0.5 rounded-md bg-[#90D5FF] text-[#0c4a6e] text-[10px] font-black uppercase tracking-wider">
-                {isEn
-                  ? '5 Official Stakeholder Categories • 100% RACI Source'
-                  : 'Classification Officielle en 5 Catégories • Source Unique 100 % RACI'}
-              </span>
-              <span className="px-2.5 py-0.5 rounded-md bg-white/15 text-sky-100 text-[10px] font-bold break-words">
-                {dossier?.name} ({dossier?.horizonPlan})
-              </span>
-            </div>
-            <h1 className="text-base sm:text-xl font-black uppercase tracking-tight text-white break-words">
-              {isEn
-                ? 'Actor Categories & Access Control (Programme -> Axis -> Project)'
-                : 'Catégories d’Acteurs & Habilitations (Programme → Axe → Projet)'}
-            </h1>
-            <p className="text-xs text-sky-100/90 max-w-4xl leading-relaxed">
-              {isEn
-                ? 'All actors displayed here originate exclusively and automatically from the RACI tab of the active programme. Enrich each actor’s category (1 to 5), full name, phone, professional email, headquarters/location, and governance instance (COPIL / COPROJ).'
-                : 'Tous les acteurs affichés proviennent automatiquement et exclusivement de l’onglet « RACI » du programme actif. Renseignez ici leur Catégorie (1 à 5), Nom & Prénom, Mobile, Email professionnel, Siège & Localisation géographique et Instance de gouvernance (COPIL / COPROJ).'}
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                setScannerInitialPayload(undefined);
-                setIsScannerModalOpen(true);
-              }}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-[11px] font-black uppercase shadow-md transition-all cursor-pointer"
-            >
-              <QrCode className="w-4 h-4 shrink-0" />
-              <span>
-                {isEn ? 'Scan QR / Barcode' : 'Scanner QR & Code-Barres'}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setProfileModalActorName(userProfile.fullName);
-                setIsProfileModalOpen(true);
-              }}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#90D5FF] hover:bg-sky-200 text-[#0c4a6e] text-[11px] font-black uppercase shadow-md transition-all cursor-pointer"
-            >
-              <CreditCard className="w-4 h-4 shrink-0" />
-              <span>
-                {isEn
-                  ? 'Internal CVs, Cards & Badges'
-                  : 'Fiches Internes : CV, Carte & Badge'}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleSyncWithRaciAndMatrices}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-white border border-white/25 text-[11px] font-bold transition-all cursor-pointer"
-              title={
-                isEn
-                  ? 'Synchronize actors with RACI tasks and M3/M4 matrices'
-                  : 'Synchroniser les acteurs avec l’onglet RACI et les Matrices M3 / M4'
-              }
-            >
-              <RefreshCw className="w-3.5 h-3.5 text-[#90D5FF] shrink-0" />
-              <span>
-                {isEn ? 'Sync RACI / M3-M4' : 'Synchroniser RACI / M3-M4'}
-              </span>
-            </button>
-          </div>
-        </div>
-      </div>
 
       {/* BARRE DE FILTRAGE HIÉRARCHIQUE : PROGRAMME (LECTURE SEULE GLOBAL) -> AXE -> PROJET + RECHERCHE */}
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-3.5 shadow-xs space-y-3">
@@ -731,24 +668,32 @@ export const CategoriesActorsView: React.FC<CategoriesActorsViewProps> = ({
               <div className="overflow-x-auto w-full">
                 <table className="w-full min-w-[920px] text-left border-collapse text-xs">
                   <thead>
-                    <tr className="bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700 text-[10px] font-black uppercase">
-                      <th className="py-2.5 px-3 w-[18%]">
-                        Nom & Prénom (Acteur RACI)
+                    <tr className="bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700 text-[10px] font-black uppercase tracking-wider">
+                      <th className="py-2.5 px-3 w-[26%]">
+                        {isEn
+                          ? 'POSITION / FUNCTION (RACI) & FULL NAME OF THE ACTOR'
+                          : 'POSTE / FONCTION (RACI) & NOM ET PRÉNOMS DE L’ACTEUR'}
                       </th>
-                      <th className="py-2.5 px-2.5 w-[13%]">
-                        Catégorie (Ordre 1 à 5)
+                      <th className="py-2.5 px-2.5 w-[14%]">
+                        {isEn ? 'ASSIGN BY CATEGORY' : 'RANGER PAR CATÉGORIE'}
                       </th>
-                      <th className="py-2.5 px-2.5 w-[19%]">
-                        Mobile / Téléphone & Email Professionnel
+                      <th className="py-2.5 px-2.5 w-[18%]">
+                        {isEn
+                          ? 'MOBILE / PHONE & PROFESSIONAL EMAIL'
+                          : 'MOBILE / TÉLÉPHONE & EMAIL PROFESSIONNEL'}
                       </th>
-                      <th className="py-2.5 px-2.5 w-[19%]">
-                        Siège & Localisation Géographique
+                      <th className="py-2.5 px-2.5 w-[18%]">
+                        {isEn
+                          ? 'HEADQUARTERS, LOCATION & INSTITUTION / ORGANISM'
+                          : 'SIÈGE, LOCALISATION & INSTITUTION / ORGANISME'}
                       </th>
-                      <th className="py-2.5 px-2.5 w-[15%]">
-                        Instance de Gouvernance (COPIL / COPROJ)
+                      <th className="py-2.5 px-2.5 w-[12%]">
+                        {isEn
+                          ? 'GOVERNANCE INSTANCE (COPIL / COPROJ)'
+                          : 'INSTANCE DE GOUVERNANCE (COPIL / COPROJ)'}
                       </th>
-                      <th className="py-2.5 px-3 w-[16%] text-right">
-                        Rôles RACI & Supports
+                      <th className="py-2.5 px-3 w-[12%] text-right">
+                        {isEn ? 'RACI ROLES & SUPPORTS' : 'RÔLES RACI & SUPPORTS'}
                       </th>
                     </tr>
                   </thead>
@@ -757,7 +702,7 @@ export const CategoriesActorsView: React.FC<CategoriesActorsViewProps> = ({
                       <tr>
                         <td
                           colSpan={6}
-                          className="py-6 px-4 text-center text-xs text-slate-400 italic"
+                          className="py-6 px-4 text-center text-[10px] text-slate-400 italic"
                         >
                           {isEn
                             ? `No RACI actor currently assigned to "${catDef.labelEn}" for this scope.`
@@ -766,9 +711,12 @@ export const CategoriesActorsView: React.FC<CategoriesActorsViewProps> = ({
                       </tr>
                     ) : (
                       catActors.map(actor => {
+                        const rawActorName = actor.name || '';
+                        const cleanActorName =
+                          mapPersonalNameToPoste(rawActorName, userProfile) || rawActorName;
                         const isMainUser =
-                          actor.name.trim().toLowerCase() ===
-                          userProfile.fullName.trim().toLowerCase();
+                          cleanActorName.trim().toLowerCase() === 'coordonnateur général pmo' ||
+                          cleanActorName.trim().toLowerCase() === (userProfile.role || '').trim().toLowerCase();
                         const canHavePersonalSupports =
                           actor.category === 'Interne' || isMainUser;
                         const currentGov: ActorGovernanceInstance =
@@ -776,61 +724,131 @@ export const CategoriesActorsView: React.FC<CategoriesActorsViewProps> = ({
                         const govStyle =
                           GOVERNANCE_OPTIONS.find(g => g.value === currentGov)
                             ?.badgeClass || GOVERNANCE_OPTIONS[3].badgeClass;
+                        const displayedDraft = nameDrafts[actor.id];
                         const displayedName =
-                          nameDrafts[actor.id] !== undefined
-                            ? nameDrafts[actor.id]
-                            : actor.name;
+                          mapPersonalNameToPoste(
+                            displayedDraft !== undefined ? displayedDraft : cleanActorName,
+                            userProfile
+                          ) || cleanActorName;
+
+                        const fallbackTitularName = (() => {
+                          if (actor.titularName && actor.titularName.trim()) {
+                            return actor.titularName;
+                          }
+                          if (isMainUser) {
+                            return userProfile.fullName || 'Koffie Fabien Michael';
+                          }
+                          const lower = cleanActorName.toLowerCase();
+                          if (lower.includes('ressources humaines') || lower.includes('drh')) {
+                            return 'Bamba Aminata (DRH UGP)';
+                          }
+                          if (lower.includes('architecte') || lower.includes('lead technique') || lower.includes('urbaniste')) {
+                            return 'Kouassi Marc';
+                          }
+                          if (lower.includes('data') || lower.includes('cybersécurité') || lower.includes('sécurité')) {
+                            return 'Koné Souleymane (RSSI)';
+                          }
+                          if (lower.includes('marchés') || lower.includes('spm')) {
+                            return 'Traoré Yacouba (SPM)';
+                          }
+                          if (lower.includes('tutelle') || lower.includes('ministère')) {
+                            return 'Dr. Yao N’Guessan (Tutelle)';
+                          }
+                          if (lower.includes('régulation') || lower.includes('contrôle')) {
+                            return 'Auditrice Générale Bakayoko';
+                          }
+                          if (lower.includes('bénéficiaire') || lower.includes('collectif')) {
+                            return 'Collectif des Bénéficiaires & Usagers Finaux';
+                          }
+                          if (lower.includes('prestataire') || lower.includes('consortium') || lower.includes('cloud')) {
+                            return 'Ing. Touré Ibrahim (Chef de Mission)';
+                          }
+                          if (lower.includes('cabinet') || lower.includes('formateur')) {
+                            return 'Cabinet IIMC & Formateurs PMP';
+                          }
+                          if (lower.includes('banque') || lower.includes('financier') || lower.includes('ptf') || lower.includes('bailleur')) {
+                            return 'M. Smith & Représentation BM/PTF';
+                          }
+                          return cleanActorName;
+                        })();
 
                         return (
                           <tr
                             key={actor.id}
                             className="hover:bg-sky-50/40 dark:hover:bg-slate-800/40 transition-colors"
                           >
-                            {/* 1. Nom & Prénom + Fonction + Matricule */}
-                            <td className="py-2.5 px-3 align-top space-y-1.5">
-                              <input
-                                type="text"
-                                value={displayedName}
-                                onChange={e =>
-                                  setNameDrafts(prev => ({
-                                    ...prev,
-                                    [actor.id]: e.target.value
-                                  }))
+                            {/* 1. POSTE / FONCTION (RACI) & NOM ET PRÉNOMS DE L'ACTEUR */}
+                            <td className="py-2.5 px-3 align-top space-y-1.5 whitespace-normal break-words">
+                              {/* Boîte 1 : Poste / Fonction RACI */}
+                              <div
+                                title={
+                                  isEn
+                                    ? 'Position / Function synchronized from RACI matrix'
+                                    : 'Poste / Fonction issu automatiquement de la matrice RACI'
                                 }
-                                onBlur={() => handleCommitActorRename(actor)}
-                                onKeyDown={e => {
-                                  if (e.key === 'Enter') {
-                                    e.currentTarget.blur();
+                                className="w-full px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-extrabold text-slate-900 dark:text-white text-[10px] leading-tight whitespace-normal break-words"
+                              >
+                                {displayedName}
+                              </div>
+
+                              {/* Libellé : NOM & PRÉNOMS DU TITULAIRE : */}
+                              <div className="text-[10px] font-black uppercase tracking-wider text-[#0284c7] dark:text-[#90D5FF] flex items-center gap-1">
+                                <span>
+                                  {isEn
+                                    ? 'NOM & PRÉNOMS DU TITULAIRE :'
+                                    : 'NOM & PRÉNOMS DU TITULAIRE :'}
+                                </span>
+                              </div>
+
+                              {/* Boîte 2 : Nom & Prénoms de l'acteur (avec icône User et retour à la ligne automatique) */}
+                              <div className="flex items-start gap-1.5 px-2 py-1.5 rounded-lg bg-sky-50/70 dark:bg-slate-800/90 border border-sky-300 dark:border-sky-700 focus-within:ring-1 focus-within:ring-[#0284c7]">
+                                <User className="w-3.5 h-3.5 text-[#0284c7] dark:text-[#90D5FF] shrink-0 mt-0.5" />
+                                <textarea
+                                  rows={Math.max(
+                                    1,
+                                    Math.min(
+                                      4,
+                                      Math.ceil(
+                                        ((actor.titularName !== undefined
+                                          ? actor.titularName
+                                          : fallbackTitularName) || '').length / 22
+                                      )
+                                    )
+                                  )}
+                                  value={
+                                    actor.titularName !== undefined
+                                      ? actor.titularName
+                                      : fallbackTitularName
                                   }
-                                }}
-                                placeholder="Nom & Prénom..."
-                                className="w-full px-2 py-1 rounded bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-extrabold text-slate-900 dark:text-white focus:border-[#0284c7] focus:outline-none text-xs"
-                              />
-                              <input
-                                type="text"
-                                value={actor.roleOrFunction || ''}
-                                onChange={e =>
-                                  handleUpdateSingleActor(actor.id, {
-                                    roleOrFunction: e.target.value
-                                  })
-                                }
-                                placeholder="Fonction / Titre..."
-                                className="w-full px-2 py-0.5 rounded bg-transparent border border-transparent hover:border-slate-200 dark:hover:border-slate-700 focus:border-[#0284c7] text-[10.5px] font-bold text-[#0284c7] dark:text-[#90D5FF] focus:outline-none"
-                              />
-                              <div className="flex flex-wrap items-center gap-1">
-                                <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-mono text-[9px] font-bold text-[#0c4a6e] dark:text-[#90D5FF]">
+                                  onChange={e =>
+                                    handleUpdateSingleActor(actor.id, {
+                                      titularName: e.target.value
+                                    })
+                                  }
+                                  placeholder={
+                                    isEn
+                                      ? 'Full name of the holder...'
+                                      : 'Nom & Prénoms du titulaire...'
+                                  }
+                                  className="w-full bg-transparent text-[10px] font-bold text-slate-900 dark:text-white focus:outline-none resize-none whitespace-normal break-words leading-tight p-0 border-none m-0"
+                                />
+                              </div>
+
+                              {/* Badge Matricule & Coordonnateur PMO */}
+                              <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                                <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-mono text-[10px] font-bold text-[#0c4a6e] dark:text-[#90D5FF]">
                                   {actor.matricule}
                                 </span>
                                 {isMainUser && (
-                                  <span className="px-1.5 py-0.5 rounded bg-[#0c4a6e] text-[#90D5FF] text-[8.5px] font-black uppercase">
-                                    ★ Utilisateur Principal
+                                  <span className="px-1.5 py-0.5 rounded bg-[#0c4a6e] text-[#90D5FF] text-[10px] font-black uppercase">
+                                    ★ Poste Coordonnateur PMO
                                   </span>
                                 )}
                               </div>
                             </td>
 
-                            {/* 2. Catégorie (Ordre strict 1 à 5) */}
-                            <td className="py-2.5 px-2.5 align-top space-y-1.5">
+                            {/* 2. RANGER PAR CATÉGORIE (Ordre strict 1 à 5) */}
+                            <td className="py-2.5 px-2.5 align-top space-y-1.5 whitespace-normal break-words">
                               <select
                                 value={actor.category}
                                 onChange={e => {
@@ -844,22 +862,22 @@ export const CategoriesActorsView: React.FC<CategoriesActorsViewProps> = ({
                                         : 'PARTENAIRE / EXTERNE (SANS BADGE INTERNE)'
                                   });
                                   triggerToast(
-                                    `✓ « ${actor.name} » classé dans « ${nextCat} »`
+                                    `✓ « ${displayedName} » classé dans « ${nextCat} »`
                                   );
                                 }}
-                                className="w-full px-2 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-[11px] font-extrabold text-[#0c4a6e] dark:text-[#90D5FF] cursor-pointer focus:outline-none focus:ring-1 focus:ring-[#90D5FF]"
+                                className="w-full px-2 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-[10px] font-extrabold text-[#0c4a6e] dark:text-[#90D5FF] cursor-pointer focus:outline-none focus:ring-1 focus:ring-[#90D5FF] whitespace-normal break-words leading-tight"
                               >
                                 {ACTOR_CATEGORIES_ORDERED.map(c => (
-                                  <option key={c.id} value={c.id}>
+                                  <option key={c.id} value={c.id} className="text-[10px]">
                                     {isEn ? c.labelEn : c.labelFr}
                                   </option>
                                 ))}
                               </select>
                             </td>
 
-                            {/* 3. Mobile / Téléphone & Email Professionnel */}
-                            <td className="py-2.5 px-2.5 align-top space-y-1.5">
-                              <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800 px-2 py-1 rounded border border-slate-200 dark:border-slate-700">
+                            {/* 3. MOBILE / TÉLÉPHONE & EMAIL PROFESSIONNEL */}
+                            <td className="py-2.5 px-2.5 align-top space-y-1.5 whitespace-normal break-words">
+                              <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800 px-2 py-1.5 rounded border border-slate-200 dark:border-slate-700">
                                 <Phone className="w-3 h-3 text-[#0284c7] shrink-0" />
                                 <input
                                   type="text"
@@ -874,14 +892,20 @@ export const CategoriesActorsView: React.FC<CategoriesActorsViewProps> = ({
                                       ? 'Mobile / Phone...'
                                       : 'Mobile / Téléphone...'
                                   }
-                                  className="w-full bg-transparent text-[11px] font-semibold text-slate-800 dark:text-slate-100 focus:outline-none"
+                                  className="w-full bg-transparent text-[10px] font-semibold text-slate-800 dark:text-slate-100 focus:outline-none whitespace-normal break-words leading-tight"
                                 />
                               </div>
 
-                              <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800 px-2 py-1 rounded border border-slate-200 dark:border-slate-700">
-                                <Mail className="w-3 h-3 text-emerald-600 shrink-0" />
-                                <input
-                                  type="email"
+                              <div className="flex items-start gap-1.5 bg-slate-50 dark:bg-slate-800 px-2 py-1.5 rounded border border-slate-200 dark:border-slate-700">
+                                <Mail className="w-3 h-3 text-emerald-600 shrink-0 mt-0.5" />
+                                <textarea
+                                  rows={Math.max(
+                                    1,
+                                    Math.min(
+                                      3,
+                                      Math.ceil((actor.email || '').length / 22)
+                                    )
+                                  )}
                                   value={actor.email || ''}
                                   onChange={e =>
                                     handleUpdateSingleActor(actor.id, {
@@ -893,17 +917,23 @@ export const CategoriesActorsView: React.FC<CategoriesActorsViewProps> = ({
                                       ? 'Professional email...'
                                       : 'Email professionnel...'
                                   }
-                                  className="w-full bg-transparent text-[11px] font-semibold text-slate-800 dark:text-slate-100 focus:outline-none"
+                                  className="w-full bg-transparent text-[10px] font-semibold text-slate-800 dark:text-slate-100 focus:outline-none resize-none whitespace-normal break-all leading-tight p-0 border-none m-0"
                                 />
                               </div>
                             </td>
 
-                            {/* 4. Siège & Localisation géographique + Structure */}
-                            <td className="py-2.5 px-2.5 align-top space-y-1.5">
-                              <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800 px-2 py-1 rounded border border-slate-200 dark:border-slate-700">
-                                <MapPin className="w-3 h-3 text-rose-500 shrink-0" />
-                                <input
-                                  type="text"
+                            {/* 4. SIÈGE, LOCALISATION & INSTITUTION / ORGANISME */}
+                            <td className="py-2.5 px-2.5 align-top space-y-1.5 whitespace-normal break-words">
+                              <div className="flex items-start gap-1.5 bg-slate-50 dark:bg-slate-800 px-2 py-1.5 rounded border border-slate-200 dark:border-slate-700">
+                                <MapPin className="w-3 h-3 text-rose-500 shrink-0 mt-0.5" />
+                                <textarea
+                                  rows={Math.max(
+                                    1,
+                                    Math.min(
+                                      4,
+                                      Math.ceil((actor.address || '').length / 22)
+                                    )
+                                  )}
                                   value={actor.address || ''}
                                   onChange={e =>
                                     handleUpdateSingleActor(actor.id, {
@@ -915,14 +945,20 @@ export const CategoriesActorsView: React.FC<CategoriesActorsViewProps> = ({
                                       ? 'Headquarters & geographic location...'
                                       : 'Siège & Localisation géographique...'
                                   }
-                                  className="w-full bg-transparent text-[11px] font-semibold text-slate-800 dark:text-slate-100 focus:outline-none"
+                                  className="w-full bg-transparent text-[10px] font-semibold text-slate-800 dark:text-slate-100 focus:outline-none resize-none whitespace-normal break-words leading-tight p-0 border-none m-0"
                                 />
                               </div>
 
-                              <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800 px-2 py-1 rounded border border-slate-200 dark:border-slate-700">
-                                <Building2 className="w-3 h-3 text-slate-400 shrink-0" />
-                                <input
-                                  type="text"
+                              <div className="flex items-start gap-1.5 bg-slate-50 dark:bg-slate-800 px-2 py-1.5 rounded border border-slate-200 dark:border-slate-700">
+                                <Building2 className="w-3 h-3 text-slate-400 shrink-0 mt-0.5" />
+                                <textarea
+                                  rows={Math.max(
+                                    1,
+                                    Math.min(
+                                      4,
+                                      Math.ceil((actor.organization || '').length / 22)
+                                    )
+                                  )}
                                   value={actor.organization || ''}
                                   onChange={e =>
                                     handleUpdateSingleActor(actor.id, {
@@ -934,13 +970,13 @@ export const CategoriesActorsView: React.FC<CategoriesActorsViewProps> = ({
                                       ? 'Organization / Institution...'
                                       : 'Institution / Organisme...'
                                   }
-                                  className="w-full bg-transparent text-[10.5px] font-medium text-slate-600 dark:text-slate-300 focus:outline-none"
+                                  className="w-full bg-transparent text-[10px] font-medium text-slate-600 dark:text-slate-300 focus:outline-none resize-none whitespace-normal break-words leading-tight p-0 border-none m-0"
                                 />
                               </div>
                             </td>
 
-                            {/* 5. Instance de Gouvernance (COPIL / COPROJ) */}
-                            <td className="py-2.5 px-2.5 align-top space-y-1.5">
+                            {/* 5. INSTANCE DE GOUVERNANCE (COPIL / COPROJ) */}
+                            <td className="py-2.5 px-2.5 align-top space-y-1.5 whitespace-normal break-words">
                               <select
                                 value={currentGov}
                                 onChange={e => {
@@ -950,16 +986,16 @@ export const CategoriesActorsView: React.FC<CategoriesActorsViewProps> = ({
                                     governanceInstance: nextGov
                                   });
                                   triggerToast(
-                                    `✓ Gouvernance de « ${actor.name} » : ${nextGov}`
+                                    `✓ Gouvernance de « ${displayedName} » : ${nextGov}`
                                   );
                                 }}
-                                className={`w-full px-2 py-1.5 rounded-lg border text-[10.5px] font-black cursor-pointer focus:outline-none ${govStyle}`}
+                                className={`w-full px-2 py-1.5 rounded-lg border text-[10px] font-black cursor-pointer focus:outline-none whitespace-normal break-words leading-tight ${govStyle}`}
                               >
                                 {GOVERNANCE_OPTIONS.map(opt => (
                                   <option
                                     key={opt.value}
                                     value={opt.value}
-                                    className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold"
+                                    className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold text-[10px]"
                                   >
                                     {isEn ? opt.labelEn : opt.labelFr}
                                   </option>
@@ -967,8 +1003,8 @@ export const CategoriesActorsView: React.FC<CategoriesActorsViewProps> = ({
                               </select>
                             </td>
 
-                            {/* 6. Rôles RACI (Lecture seule issue du RACI) & Supports Individuels (Réservés Catégorie 2 Interne) */}
-                            <td className="py-2.5 px-3 align-top text-right space-y-2">
+                            {/* 6. RÔLES RACI & SUPPORTS */}
+                            <td className="py-2.5 px-3 align-top text-right space-y-2 whitespace-normal break-words">
                               <div className="inline-flex items-center justify-end gap-1">
                                 {(['R', 'A', 'C', 'I'] as const).map(rCode => {
                                   const active =
@@ -981,7 +1017,7 @@ export const CategoriesActorsView: React.FC<CategoriesActorsViewProps> = ({
                                           ? 'RACI role derived from RACI tab'
                                           : 'Rôle issu automatiquement de l’onglet RACI'
                                       }
-                                      className={`w-5 h-5 rounded flex items-center justify-center text-[9.5px] font-black ${
+                                      className={`w-5 h-5 rounded flex items-center justify-center text-[10px] font-black ${
                                         active
                                           ? 'bg-[#0c4a6e] text-[#90D5FF] shadow-2xs'
                                           : 'bg-slate-100 dark:bg-slate-800 text-slate-400'
@@ -999,10 +1035,10 @@ export const CategoriesActorsView: React.FC<CategoriesActorsViewProps> = ({
                                     <button
                                       type="button"
                                       onClick={() => {
-                                        setProfileModalActorName(actor.name);
+                                        setProfileModalActorName(cleanActorName);
                                         setIsProfileModalOpen(true);
                                       }}
-                                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#0c4a6e] hover:bg-[#075985] text-[#90D5FF] text-[10px] font-black uppercase cursor-pointer shadow-2xs"
+                                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#0c4a6e] hover:bg-[#075985] text-[#90D5FF] text-[10px] font-black uppercase cursor-pointer shadow-2xs whitespace-normal text-left"
                                       title="Ouvrir la fiche : Carte de Visite (vCard), Badge CR80 (CODE-128) & 2 Modèles de CV (Docs 12 & 13)"
                                     >
                                       <CreditCard className="w-3.5 h-3.5 shrink-0" />
@@ -1017,7 +1053,7 @@ export const CategoriesActorsView: React.FC<CategoriesActorsViewProps> = ({
                                         );
                                         setIsScannerModalOpen(true);
                                       }}
-                                      className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 text-[10px] font-black cursor-pointer"
+                                      className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 text-[10px] font-black cursor-pointer whitespace-nowrap"
                                       title="Scanner et authentifier le Badge / QR Code de cet acteur interne"
                                     >
                                       <QrCode className="w-3.5 h-3.5 shrink-0" />
@@ -1026,7 +1062,7 @@ export const CategoriesActorsView: React.FC<CategoriesActorsViewProps> = ({
                                   </>
                                 ) : (
                                   <span
-                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 text-[9.5px] font-bold"
+                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 text-[10px] font-bold whitespace-normal leading-tight text-right"
                                     title="Conformément aux règles de sécurité institutionnelle, seuls l'utilisateur connecté et les acteurs de la catégorie « Interne » peuvent générer un CV, une Carte de Visite ou un Badge d'Accès."
                                   >
                                     <Lock className="w-3 h-3 text-amber-600 shrink-0" />
